@@ -1,0 +1,21 @@
+# Build output
+**/target/
+**/build/
+
+# IDE and operating system files
+**/.idea/
+**/.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+**/.terraform/
