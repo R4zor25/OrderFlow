@@ -359,7 +359,7 @@ orderflow/
 ├── docs/
 │   └── ARCHITECTURE.md
 ├── infra/
-│   ├── docker-compose.yml          # infra + all services
+│   ├── docker-compose.yaml         # infra + all services
 │   ├── postgres/init.sql           # creates schemas
 │   └── terraform/
 ├── scripts/
