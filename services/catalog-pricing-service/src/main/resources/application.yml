@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: catalog-pricing-service
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
