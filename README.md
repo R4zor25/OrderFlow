@@ -18,7 +18,7 @@ The root POM builds the service currently present. To build it independently, ru
 
 ## Run locally
 
-Create `infra/.env` using `infra/.env.example` as a template and choose a local password. The real `.env` is ignored by Git. Start the infrastructure:
+If `infra/.env` does not exist yet, copy `infra/.env.example` to `infra/.env` and replace the placeholder with your own local password. Keep an existing working `.env` unchanged. Compose reads `.env`, not `.env.example`; the example is only a committed template. The real `.env` is ignored by Git. Start the infrastructure:
 
 ```bash
 docker compose -f infra/docker-compose.yaml up -d --wait
