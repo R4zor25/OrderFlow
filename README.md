@@ -4,7 +4,7 @@ OrderFlow is a B2B/B2C e-commerce backend built as a set of services. The target
 
 ## Current state
 
-The repository contains a Maven aggregator, a Spring Boot `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides paged product reads by category and SKU plus product creation with validation. Pricing logic and messaging features have not been implemented yet. The other services shown in the architecture document are planned.
+The repository contains a Maven aggregator, a Spring Boot `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides product reads, creation, and price quotes. Messaging features and the other services shown in the architecture document are planned.
 
 ## Build and test
 
@@ -40,6 +40,9 @@ curl http://localhost:8081/api/v1/products/CHAIR-001
 curl -i -X POST http://localhost:8081/api/v1/products \
   -H 'Content-Type: application/json' \
   -d '{"sku":"TEST-NEW-001","name":"New Test Product","category":"OFFICE","listPriceNet":19.90,"vatRate":0.27}'
+curl -i -X POST http://localhost:8081/api/v1/quotes \
+  -H 'Content-Type: application/json' \
+  -d '{"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":25}]}'
 ```
 
 The expected health status is `UP`. The local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
@@ -49,3 +52,5 @@ On startup, Flyway applies `V1__catalog.sql` and `V2__seed.sql` once. The `catal
 The product list accepts optional `category`, `page` (zero-based, default 0) and `size` (default 20, capped at 100) parameters. Items are sorted by SKU. A product that does not exist returns 404.
 
 Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, and a `vatRate` between 0 and 1. A successful request returns 201 with a `Location` header. Invalid request fields return 400, an existing SKU returns 409, and an out-of-range VAT rate returns 422. Errors use RFC 9457 problem details.
+
+`POST /api/v1/quotes` accepts a customer group and one or more SKU/quantity lines. It returns EUR prices using the highest applicable quantity tier, or the product list price if no tier applies. B2C lines show gross amounts; B2B lines show net and VAT separately. The response always includes net, VAT, and gross totals. Invalid input returns 400. Unknown or inactive SKUs return 422 with every missing SKU in the `skus` array. Quoting writes no data.

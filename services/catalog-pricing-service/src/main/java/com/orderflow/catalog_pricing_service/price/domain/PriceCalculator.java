@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.product.domain;
+package com.orderflow.catalog_pricing_service.price.domain;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

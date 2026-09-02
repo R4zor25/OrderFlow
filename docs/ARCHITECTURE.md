@@ -387,3 +387,5 @@ com.orderflow.order
 ```
 
 No ports-and-adapters interfaces unless there are two real implementations.
+
+In `catalog-pricing-service`, `product` and `price` are feature packages with their own `api`, `application`, `domain`, and `infrastructure` subpackages. The cross-feature `ApiExceptionHandler` and UTC `Clock` configuration live in top-level `api` and `config` packages.

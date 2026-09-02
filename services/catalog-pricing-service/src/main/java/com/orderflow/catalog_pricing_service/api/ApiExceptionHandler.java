@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.product.api;
+package com.orderflow.catalog_pricing_service.api;
 
 import java.net.URI;
 import java.sql.SQLException;
@@ -23,6 +23,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.orderflow.catalog_pricing_service.product.domain.InvalidProductException;
+import com.orderflow.catalog_pricing_service.price.application.UnknownSkusException;
 
 @RestControllerAdvice
 @NullMarked
@@ -73,6 +74,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidProductException.class)
     public ProblemDetail invalidProduct(InvalidProductException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-product", "Invalid product", exception.getMessage());
+    }
+
+    @ExceptionHandler(UnknownSkusException.class)
+    public ProblemDetail unknownSkus(UnknownSkusException exception) {
+        var problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, "unknown-skus", "Unknown SKUs", exception.getMessage());
+        problem.setProperty("skus", exception.getSkus());
+        return problem;
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

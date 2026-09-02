@@ -7,8 +7,8 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 
-import com.orderflow.catalog_pricing_service.product.domain.PriceCalculator;
-import com.orderflow.catalog_pricing_service.product.domain.PriceTier;
+import com.orderflow.catalog_pricing_service.price.domain.PriceCalculator;
+import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;

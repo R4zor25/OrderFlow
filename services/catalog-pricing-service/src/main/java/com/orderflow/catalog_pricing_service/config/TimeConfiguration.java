@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.product.config;
+package com.orderflow.catalog_pricing_service.config;
 
 import java.time.Clock;
 
@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
-public class ProductTimeConfiguration {
+public class TimeConfiguration {
 
     @Bean
     Clock clock() {
