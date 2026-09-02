@@ -4,7 +4,14 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: catalog
+  flyway:
+    schemas: catalog
+    default-schema: catalog
+    locations: classpath:db/migration/catalog
 
 server:
   port: 8081

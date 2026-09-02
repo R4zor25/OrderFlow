@@ -4,7 +4,7 @@ OrderFlow is a B2B/B2C e-commerce backend built as a set of services. The target
 
 ## Current state
 
-The repository contains a Maven aggregator, a Spring Boot skeleton for `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service can connect to PostgreSQL and exposes Actuator health. Product, pricing, persistence mappings and messaging features have not been implemented yet. The other services shown in the architecture document are planned.
+The repository contains a Maven aggregator, a Spring Boot skeleton for `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, and exposes Actuator health. Product endpoints, pricing logic, JPA entity mappings and messaging features have not been implemented yet. The other services shown in the architecture document are planned.
 
 ## Build and test
 
@@ -33,3 +33,5 @@ curl http://localhost:8081/actuator/health
 ```
 
 The expected health status is `UP`. The local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
+
+On startup, Flyway applies `V1__catalog.sql` and `V2__seed.sql` once. The `catalog` schema then contains 20 sample products, three customer groups and 12 B2B price tiers. Applied versions are recorded in `catalog.flyway_schema_history`.
