@@ -43,6 +43,30 @@ public class Product {
     protected Product() {
     }
 
+    private Product(UUID id, String sku, String name, String category,
+                    BigDecimal listPriceNet, BigDecimal vatRate, Instant createdAt) {
+        this.id = id;
+        this.sku = sku;
+        this.name = name;
+        this.category = category;
+        this.listPriceNet = listPriceNet;
+        this.vatRate = vatRate;
+        this.active = true;
+        this.createdAt = createdAt;
+        this.updatedAt = createdAt;
+    }
+
+    public static Product create(String sku, String name, String category,
+                                 BigDecimal listPriceNet, BigDecimal vatRate, Instant createdAt) {
+        if (vatRate == null || vatRate.signum() < 0 || vatRate.compareTo(BigDecimal.ONE) > 0) {
+            throw new InvalidProductException("vatRate must be between 0 and 1");
+        }
+        if (listPriceNet == null || listPriceNet.signum() <= 0) {
+            throw new InvalidProductException("listPriceNet must be positive");
+        }
+        return new Product(UUID.randomUUID(), sku, name, category, listPriceNet, vatRate, createdAt);
+    }
+
     public UUID getId() {
         return id;
     }

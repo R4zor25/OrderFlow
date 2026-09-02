@@ -4,7 +4,7 @@ OrderFlow is a B2B/B2C e-commerce backend built as a set of services. The target
 
 ## Current state
 
-The repository contains a Maven aggregator, a Spring Boot `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides paged product reads by category and SKU. Product creation, pricing logic and messaging features have not been implemented yet. The other services shown in the architecture document are planned.
+The repository contains a Maven aggregator, a Spring Boot `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides paged product reads by category and SKU plus product creation with validation. Pricing logic and messaging features have not been implemented yet. The other services shown in the architecture document are planned.
 
 ## Build and test
 
@@ -24,14 +24,22 @@ If `infra/.env` does not exist yet, copy `infra/.env.example` to `infra/.env` an
 docker compose -f infra/docker-compose.yaml up -d --wait
 ```
 
-The Java process runs on the Mac, outside Compose. Pass the same `POSTGRES_PASSWORD` value to its environment (for example, in an IntelliJ run configuration), select the `local` profile, and start the service:
+The Java process runs on the Mac, outside Compose. Pass the same `POSTGRES_PASSWORD` value to its environment (for example, in an IntelliJ run configuration), select the `local` profile, and start the service. In a terminal, keep this command running:
 
 ```bash
 cd services/catalog-pricing-service
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+In another terminal, try the endpoints:
+
+```bash
 curl http://localhost:8081/actuator/health
 curl 'http://localhost:8081/api/v1/products?category=FURNITURE&page=0&size=3'
 curl http://localhost:8081/api/v1/products/CHAIR-001
+curl -i -X POST http://localhost:8081/api/v1/products \
+  -H 'Content-Type: application/json' \
+  -d '{"sku":"TEST-NEW-001","name":"New Test Product","category":"OFFICE","listPriceNet":19.90,"vatRate":0.27}'
 ```
 
 The expected health status is `UP`. The local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
@@ -39,3 +47,5 @@ The expected health status is `UP`. The local profile connects to `localhost:543
 On startup, Flyway applies `V1__catalog.sql` and `V2__seed.sql` once. The `catalog` schema then contains 20 sample products, three customer groups and 12 B2B price tiers. Applied versions are recorded in `catalog.flyway_schema_history`.
 
 The product list accepts optional `category`, `page` (zero-based, default 0) and `size` (default 20, capped at 100) parameters. Items are sorted by SKU. A product that does not exist returns 404.
+
+Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, and a `vatRate` between 0 and 1. A successful request returns 201 with a `Location` header. Invalid request fields return 400, an existing SKU returns 409, and an out-of-range VAT rate returns 422. Errors use RFC 9457 problem details.

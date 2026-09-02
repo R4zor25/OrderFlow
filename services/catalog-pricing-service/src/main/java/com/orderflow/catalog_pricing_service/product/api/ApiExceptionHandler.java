@@ -1,0 +1,101 @@
+package com.orderflow.catalog_pricing_service.product.api;
+
+import java.net.URI;
+import java.sql.SQLException;
+import java.util.Map;
+import java.util.TreeMap;
+
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponseException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+
+import com.orderflow.catalog_pricing_service.product.domain.InvalidProductException;
+
+@RestControllerAdvice
+@NullMarked
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @Override
+    protected @Nullable ResponseEntity<Object> handleMethodArgumentNotValid(
+        MethodArgumentNotValidException exception, HttpHeaders headers, HttpStatusCode status, WebRequest request
+    ) {
+        var problem = problem(HttpStatus.BAD_REQUEST, "validation", "Validation failed", "Request fields are invalid");
+        Map<String, String> violations = new TreeMap<>();
+        exception.getBindingResult().getFieldErrors().forEach(error -> {
+            var message = error.getDefaultMessage();
+            violations.putIfAbsent(error.getField(), message == null ? "Invalid value" : message);
+        });
+        problem.setProperty("violations", violations);
+        return handleExceptionInternal(exception, problem, headers, status, request);
+    }
+
+    @Override
+    protected @Nullable ResponseEntity<Object> handleHttpMessageNotReadable(
+        HttpMessageNotReadableException exception, HttpHeaders headers, HttpStatusCode status, WebRequest request
+    ) {
+        return handleExceptionInternal(exception,
+            problem(HttpStatus.BAD_REQUEST, "validation", "Validation failed", "Request body is invalid"),
+            headers, status, request);
+    }
+
+    @Override
+    protected @Nullable ResponseEntity<Object> handleTypeMismatch(
+        TypeMismatchException exception, HttpHeaders headers, HttpStatusCode status, WebRequest request
+    ) {
+        return handleExceptionInternal(exception,
+            problem(HttpStatus.BAD_REQUEST, "validation", "Validation failed", "Request parameter has an invalid type"),
+            headers, status, request);
+    }
+
+    @Override
+    protected @Nullable ResponseEntity<Object> handleErrorResponseException(
+        ErrorResponseException exception, HttpHeaders headers, HttpStatusCode status, WebRequest request
+    ) {
+        var kind = status.value() == 404 ? "not-found" : status.value() == 400 ? "validation" : "http-error";
+        var title = status.value() == 404 ? "Not found" : status.value() == 400 ? "Validation failed" : "Request failed";
+        return handleExceptionInternal(exception,
+            problem(status, kind, title, exception.getBody().getDetail()), headers, status, request);
+    }
+
+    @ExceptionHandler(InvalidProductException.class)
+    public ProblemDetail invalidProduct(InvalidProductException exception) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-product", "Invalid product", exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail dataConflict(DataIntegrityViolationException exception) {
+        if (isUniqueViolation(exception)) {
+            return problem(HttpStatus.CONFLICT, "sku-conflict", "SKU conflict", "A product with this SKU already exists");
+        }
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-product", "Invalid product", "Product violates a database constraint");
+    }
+
+    private boolean isUniqueViolation(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ProblemDetail problem(HttpStatusCode status, String kind, String title, @Nullable String detail) {
+        var problem = ProblemDetail.forStatusAndDetail(status, detail == null ? title : detail);
+        problem.setType(URI.create("/problems/" + kind));
+        problem.setTitle(title);
+        return problem;
+    }
+}
