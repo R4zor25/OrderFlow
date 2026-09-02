@@ -120,8 +120,8 @@ Quote request/response:
 {
   "customerGroup": "B2B_GOLD",
   "currency": "EUR",
-  "lines": [ { "sku": "CHAIR-001", "quantity": 25, "unitPriceNet": 79.90, "lineTotalNet": 1997.50, "appliedRule": "TIER_MIN_QTY_20" } ],
-  "totalNet": 1997.50, "totalVat": 539.33, "totalGross": 2536.83,
+  "lines": [ { "sku": "CHAIR-001", "quantity": 25, "unitPriceNet": 74.90, "lineTotalNet": 1872.50, "appliedRule": "TIER_MIN_QTY_20" } ],
+  "totalNet": 1872.50, "totalVat": 505.58, "totalGross": 2378.08,
   "quotedAt": "2026-10-01T10:15:30Z"
 }
 ```
