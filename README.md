@@ -4,7 +4,7 @@ OrderFlow is a B2B/B2C e-commerce backend built as a set of services. The target
 
 ## Current state
 
-The repository contains a Maven aggregator, a Spring Boot `catalog-pricing-service`, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides product reads, creation, price quotes, and price-list updates. Frequently read price tiers are cached in Redis. Messaging features and the other services shown in the architecture document are planned.
+The repository contains a Maven aggregator, Spring Boot `catalog-pricing-service` and `order-service` modules, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides product reads, creation, price quotes, and price-list updates. The order service has its own `orders` schema, four sample customers, and an `Order` aggregate with persisted lines; order HTTP endpoints come in later steps. Frequently read price tiers are cached in Redis. Messaging features and the other services shown in the architecture document are planned.
 
 ## Build and test
 
@@ -14,7 +14,7 @@ JDK 25 is required. The Maven Wrapper supplies the Maven version.
 ./mvnw verify
 ```
 
-The root POM builds the service currently present. To build it independently, run `./mvnw verify` from `services/catalog-pricing-service/`. The database and API tests start temporary PostgreSQL and Redis Testcontainers, so Docker must be running.
+The root POM builds both services. To build either independently, run `./mvnw verify` from its directory under `services/`. The database and API tests start temporary PostgreSQL and Redis Testcontainers, so Docker must be running.
 
 ## Run locally
 
@@ -24,7 +24,7 @@ If `infra/.env` does not exist yet, copy `infra/.env.example` to `infra/.env` an
 docker compose -f infra/docker-compose.yaml up -d --wait
 ```
 
-The Java process runs on the Mac, outside Compose. Pass the same `POSTGRES_PASSWORD` value to its environment (for example, in an IntelliJ run configuration), select the `local` profile, and start the service. In a terminal, keep this command running:
+The Java processes run on the Mac, outside Compose. Pass the same `POSTGRES_PASSWORD` value to their environments (for example, in IntelliJ run configurations), select the `local` profile, and start the service you need. In a terminal, keep this command running:
 
 ```bash
 cd services/catalog-pricing-service
@@ -59,3 +59,16 @@ Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, 
 `POST /api/v1/quotes` accepts a customer group and one or more SKU/quantity lines. It returns EUR prices using the highest applicable quantity tier, or the product list price if no tier applies. B2C lines show gross amounts; B2B lines show net and VAT separately. The response always includes net, VAT, and gross totals. Invalid input returns 400. Unknown or inactive SKUs return 422 with every missing SKU in the `skus` array. Quoting writes no data.
 
 The PUT example above changes the local seed price for `CHAIR-001`. `PUT /api/v1/products/{sku}/prices` replaces the full price-tier list for one customer group and SKU. An empty `tiers` array clears that group's tiers. A successful update returns 204 and invalidates the corresponding Redis cache entry after the database transaction commits. Repeating a quote for the same group and SKU reads its tiers from Redis; cache entries expire after 10 minutes. The `local` profile connects to Redis at `localhost:6379`; the `aws` profile reads `CATALOG_REDIS_HOST` and optional `CATALOG_REDIS_PORT` (default 6379).
+
+## Order service skeleton
+
+The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. The domain model can create a `PENDING` order with its priced lines, but no HTTP order creation endpoint exists yet. The state transition methods are added in the next learning step.
+
+With Compose running and `POSTGRES_PASSWORD` set to the value in `infra/.env`, start it separately:
+
+```bash
+cd services/order-service
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`.

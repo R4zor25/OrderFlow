@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/orderflow?currentSchema=orders
+    username: orderflow
+    password: ${POSTGRES_PASSWORD}

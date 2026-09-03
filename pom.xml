@@ -10,5 +10,6 @@
 
     <modules>
         <module>services/catalog-pricing-service</module>
+        <module>services/order-service</module>
     </modules>
 </project>
