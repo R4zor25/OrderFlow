@@ -14,6 +14,11 @@ import org.springframework.web.client.RestClient;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.orderflow.order.config.PricingClientConfiguration;
 import com.orderflow.order.config.PricingClientProperties;
+import com.orderflow.order.config.PricingResilienceConfiguration;
+import com.orderflow.order.config.PricingResilienceProperties;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
@@ -28,6 +33,7 @@ class PricingGatewayTest {
 
     private WireMockServer server;
     private PricingGateway gateway;
+    private CircuitBreaker circuitBreaker;
 
     @BeforeEach
     void startServer() {
@@ -39,7 +45,11 @@ class PricingGatewayTest {
         var configuration = new PricingClientConfiguration();
         RestClient restClient = configuration.pricingRestClient(RestClient.builder(), properties);
         PricingClient client = configuration.pricingClient(restClient);
-        gateway = new PricingGateway(client);
+        var resilience = new PricingResilienceConfiguration();
+        var resilienceProperties = new PricingResilienceProperties(
+            2, Duration.ofMillis(10), 2, 0.2, 10, 10, 50, Duration.ofSeconds(10), 2);
+        circuitBreaker = resilience.pricingCircuitBreaker(resilienceProperties);
+        gateway = new PricingGateway(client, resilience.pricingRetry(resilienceProperties), circuitBreaker);
     }
 
     @AfterEach
@@ -83,6 +93,8 @@ class PricingGatewayTest {
             .isInstanceOf(PricingRequestRejectedException.class)
             .satisfies(error -> assertThat(((PricingRequestRejectedException) error).getStatus().value())
                 .isEqualTo(422));
+        server.verify(1, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+        assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isZero();
     }
 
     @Test
@@ -92,6 +104,72 @@ class PricingGatewayTest {
 
         assertThatThrownBy(() -> gateway.quote(sampleRequest()))
             .isInstanceOf(PricingUnavailableException.class);
+        server.verify(2, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void retriesServerFailureOnceAndCountsFinalSuccessOnce() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .inScenario("temporary failure")
+            .whenScenarioStateIs(Scenario.STARTED)
+            .willReturn(aResponse().withStatus(503))
+            .willSetStateTo("recovered"));
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .inScenario("temporary failure")
+            .whenScenarioStateIs("recovered")
+            .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {"customerGroup":"B2B_GOLD","currency":"EUR","lines":[],
+                     "totalNet":0,"totalVat":0,"totalGross":0,
+                     "quotedAt":"2026-10-01T10:15:30Z"}
+                    """)));
+
+        assertThat(gateway.quote(sampleRequest()).currency()).isEqualTo("EUR");
+        server.verify(2, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
+        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isZero();
+    }
+
+    @Test
+    void opensAfterTenFailedQuotesAndRejectsNextWithoutHttp() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .willReturn(aResponse().withStatus(503)));
+
+        for (int call = 0; call < 10; call++) {
+            assertThatThrownBy(() -> gateway.quote(sampleRequest()))
+                .isInstanceOf(PricingUnavailableException.class);
+        }
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(10);
+        assertThatThrownBy(() -> gateway.quote(sampleRequest()))
+            .isInstanceOf(CallNotPermittedException.class);
+        server.verify(20, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void closesAfterTwoSuccessfulHalfOpenQuotes() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .willReturn(aResponse().withStatus(503)));
+        for (int call = 0; call < 10; call++) {
+            assertThatThrownBy(() -> gateway.quote(sampleRequest()))
+                .isInstanceOf(PricingUnavailableException.class);
+        }
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        server.resetAll();
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {"customerGroup":"B2B_GOLD","currency":"EUR","lines":[],
+                     "totalNet":0,"totalVat":0,"totalGross":0,
+                     "quotedAt":"2026-10-01T10:15:30Z"}
+                    """)));
+        circuitBreaker.transitionToHalfOpenState();
+
+        assertThat(gateway.quote(sampleRequest()).currency()).isEqualTo("EUR");
+        assertThat(gateway.quote(sampleRequest()).currency()).isEqualTo("EUR");
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        server.verify(2, postRequestedFor(urlEqualTo("/api/v1/quotes")));
     }
 
     @Test
@@ -113,6 +191,7 @@ class PricingGatewayTest {
             .isInstanceOf(PricingUnavailableException.class);
 
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(4));
+        server.verify(1, postRequestedFor(urlEqualTo("/api/v1/quotes")));
     }
 
     private static QuoteRequest sampleRequest() {

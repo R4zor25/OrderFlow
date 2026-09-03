@@ -21,6 +21,16 @@ order:
     base-url: ${CATALOG_PRICING_BASE_URL:http://localhost:8081}
     connect-timeout: 1s
     read-timeout: 2s
+    resilience:
+      max-attempts: 2
+      initial-wait: 100ms
+      backoff-multiplier: 2
+      jitter-factor: 0.2
+      sliding-window-size: 10
+      minimum-number-of-calls: 10
+      failure-rate-threshold: 50
+      open-wait: 10s
+      half-open-permitted-calls: 2
 
 management:
   endpoints:
