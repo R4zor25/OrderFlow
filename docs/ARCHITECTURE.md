@@ -135,7 +135,7 @@ Responsibility: customers (minimal), orders, order state machine, orchestrating 
 Tables:
 
 - `customer(id uuid pk, name, email, type varchar check in ('B2C','B2B'), customer_group_code)`, seeded with a few customers
-- `orders(id uuid pk, customer_id fk, status, currency, total_net, total_vat, total_gross, created_at, updated_at, version bigint)`
+- `orders(id uuid pk, customer_id fk, status, currency, total_net, total_vat, total_gross, rejection_reason varchar(500) null, created_at, updated_at, version bigint)`; `REJECTED` requires a nonblank reason, other states have none
 - `order_line(id uuid pk, order_id fk, sku, quantity, unit_price_net, line_total_net)`
 - `outbox_event(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb null, created_at, published_at null)` with partial index on `published_at is null`; `headers` carries the trace context (`traceparent`) so the relay can continue the trace
 - `processed_event(event_id uuid pk, processed_at)`

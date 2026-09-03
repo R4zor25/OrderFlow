@@ -61,6 +61,9 @@ public class Order {
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<OrderLine> lines = new ArrayList<>();
 
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     protected Order() {
     }
 
@@ -101,6 +104,43 @@ public class Order {
         lines.add(orderLine);
         totalNet = totalNet.add(orderLine.getLineTotalNet());
         totalGross = totalNet.add(totalVat);
+    }
+
+    public void confirm(Instant now) {
+        if (status != OrderStatus.PENDING) {
+            throw new InvalidOrderStateException("Cannot confirm order in " + status + " state");
+        }
+        requireTime(now);
+        updatedAt = now;
+        status = OrderStatus.CONFIRMED;
+    }
+
+    public void reject(String reason, Instant now) {
+        if (status != OrderStatus.PENDING) {
+            throw new InvalidOrderStateException("Cannot reject order in " + status + " state");
+        }
+        requireTime(now);
+        if (reason == null || reason.isBlank() || reason.trim().length() > 500) {
+            throw new InvalidOrderException("Rejection reason must contain 1 to 500 characters");
+        }
+        updatedAt = now;
+        rejectionReason = reason.trim();
+        status = OrderStatus.REJECTED;
+    }
+
+    public void cancel(Instant now) {
+        if (status != OrderStatus.PENDING && status != OrderStatus.CONFIRMED) {
+            throw new InvalidOrderStateException("Cannot cancel order in " + status + " state");
+        }
+        requireTime(now);
+        updatedAt = now;
+        status = OrderStatus.CANCELLED;
+    }
+
+    private static void requireTime(Instant now) {
+        if (now == null) {
+            throw new InvalidOrderException("Transition time is required");
+        }
     }
 
     public record PricedLine(String sku, int quantity, BigDecimal unitPriceNet) {
@@ -144,6 +184,10 @@ public class Order {
 
     public long getVersion() {
         return version;
+    }
+
+    public String getRejectionReason() {
+        return rejectionReason;
     }
 
     public List<OrderLine> getLines() {
