@@ -1,29 +1,133 @@
 package com.orderflow.catalog_pricing_service.price;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
+import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
 
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(PostgresTestConfiguration.class)
+@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class})
 class QuoteApiTest {
 
     private final MockMvc mvc;
+    private final CacheManager cacheManager;
+
+    @MockitoSpyBean
+    private PriceListEntryRepository priceListEntryRepository;
 
     @Autowired
-    QuoteApiTest(MockMvc mvc) {
+    QuoteApiTest(MockMvc mvc, CacheManager cacheManager) {
         this.mvc = mvc;
+        this.cacheManager = cacheManager;
+    }
+
+    @BeforeEach
+    void clearPriceCache() {
+        cacheManager.getCache("price-tiers").clear();
+    }
+
+    @Test
+    void coldCacheLoadsMultipleSkusInOneRepositoryCall() throws Exception {
+        mvc.perform(post("/api/v1/quotes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","lines":[
+                      {"sku":"CHAIR-001","quantity":1},
+                      {"sku":"LAMP-002","quantity":1}
+                    ]}
+                    """))
+            .andExpect(status().isOk());
+        verify(priceListEntryRepository, times(1))
+            .findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), eq(java.util.Set.of("CHAIR-001", "LAMP-002")));
+    }
+
+    @Test
+    void repeatedQuoteReadsPriceTiersFromRepositoryOnlyOnce() throws Exception {
+        String request = """
+            {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":25}]}
+            """;
+        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(request))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(request))
+            .andExpect(status().isOk());
+        verify(priceListEntryRepository, times(1))
+            .findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection());
+    }
+
+    @Test
+    void priceUpdateEvictsCachedTiers() throws Exception {
+        mvc.perform(post("/api/v1/products")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"sku":"CACHE-STEP10","name":"Cache test product","category":"TEST",
+                     "listPriceNet":100.00,"vatRate":0.27}
+                    """))
+            .andExpect(status().isCreated());
+        String quote = """
+            {"customerGroup":"B2B_GOLD","lines":[{"sku":"CACHE-STEP10","quantity":1}]}
+            """;
+        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+            .andExpect(jsonPath("$.lines[0].unitPriceNet").value(100.00));
+        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","tiers":[
+                      {"minQty":1,"unitPriceNet":80.00,"validFrom":"2020-01-01"}
+                    ]}
+                    """))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+            .andExpect(jsonPath("$.lines[0].unitPriceNet").value(80.00));
+        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","tiers":[
+                      {"minQty":1,"unitPriceNet":70.00,"validFrom":"2020-01-01"}
+                    ]}
+                    """))
+            .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+            .andExpect(jsonPath("$.lines[0].unitPriceNet").value(70.00));
+    }
+
+    @Test
+    void rejectsOverlappingPriceTiersWithoutChangingExistingPrices() throws Exception {
+        mvc.perform(put("/api/v1/products/CHAIR-001/prices")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","tiers":[
+                      {"minQty":1,"unitPriceNet":80.00,"validFrom":"2020-01-01","validTo":"2030-01-01"},
+                      {"minQty":1,"unitPriceNet":70.00,"validFrom":"2025-01-01"}
+                    ]}
+                    """))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.type").value("/problems/invalid-price-list"));
+        mvc.perform(post("/api/v1/quotes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":1}]}
+                    """))
+            .andExpect(jsonPath("$.lines[0].unitPriceNet").value(84.90));
     }
 
     @Test

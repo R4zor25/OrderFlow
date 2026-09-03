@@ -126,7 +126,7 @@ Quote request/response:
 }
 ```
 
-Caching: the resolved tier list per `(customerGroup, sku)` is cached in Redis via `@Cacheable("price-tiers")`, JSON serialization, TTL 10 minutes, evicted by `@CacheEvict` on price update. Cache-aside with TTL and explicit eviction bounds staleness by the TTL if eviction is missed.
+Caching: the tier list per `(customerGroup, sku)` is stored in Redis through a programmatic cache-aside lookup, with JSON serialization and a 10-minute TTL. Missing keys from one quote are loaded in one database query, then cached individually, including empty tier lists. `PUT /api/v1/products/{sku}/prices` replaces one group’s tiers and evicts its cache key after the database transaction commits. The TTL bounds staleness if an invalidation is missed.
 
 ### 4.2 order-service (Spring Boot, port 8082, schema `orders`)
 

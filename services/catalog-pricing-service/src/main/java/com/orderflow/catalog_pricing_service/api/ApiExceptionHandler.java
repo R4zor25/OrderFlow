@@ -24,6 +24,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 import com.orderflow.catalog_pricing_service.product.domain.InvalidProductException;
 import com.orderflow.catalog_pricing_service.price.application.UnknownSkusException;
+import com.orderflow.catalog_pricing_service.price.application.InvalidPriceListException;
 
 @RestControllerAdvice
 @NullMarked
@@ -81,6 +82,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         var problem = problem(HttpStatus.UNPROCESSABLE_CONTENT, "unknown-skus", "Unknown SKUs", exception.getMessage());
         problem.setProperty("skus", exception.getSkus());
         return problem;
+    }
+
+    @ExceptionHandler(InvalidPriceListException.class)
+    public ProblemDetail invalidPriceList(InvalidPriceListException exception) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-price-list", "Invalid price list", exception.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

@@ -3,3 +3,7 @@ spring:
     url: jdbc:postgresql://localhost:5433/orderflow?currentSchema=catalog
     username: orderflow
     password: ${POSTGRES_PASSWORD}
+  data:
+    redis:
+      host: localhost
+      port: 6379

@@ -3,3 +3,7 @@ spring:
     url: ${CATALOG_DB_URL}
     username: ${CATALOG_DB_USERNAME}
     password: ${CATALOG_DB_PASSWORD}
+  data:
+    redis:
+      host: ${CATALOG_REDIS_HOST}
+      port: ${CATALOG_REDIS_PORT:6379}

@@ -37,6 +37,22 @@ public class PriceListEntry {
     protected PriceListEntry() {
     }
 
+    private PriceListEntry(String customerGroupCode, String sku, int minQty, BigDecimal unitPriceNet,
+                           LocalDate validFrom, LocalDate validTo) {
+        this.id = UUID.randomUUID();
+        this.customerGroupCode = customerGroupCode;
+        this.sku = sku;
+        this.minQty = minQty;
+        this.unitPriceNet = unitPriceNet;
+        this.validFrom = validFrom;
+        this.validTo = validTo;
+    }
+
+    public static PriceListEntry create(String group, String sku, int minQty, BigDecimal unitPriceNet,
+                                        LocalDate validFrom, LocalDate validTo) {
+        return new PriceListEntry(group, sku, minQty, unitPriceNet, validFrom, validTo);
+    }
+
     public String getCustomerGroupCode() {
         return customerGroupCode;
     }

@@ -3,7 +3,6 @@ package com.orderflow.catalog_pricing_service.price.application;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,10 +12,9 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.orderflow.catalog_pricing_service.price.domain.PriceListEntry;
 import com.orderflow.catalog_pricing_service.price.domain.PriceCalculator;
 import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
-import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
 import com.orderflow.catalog_pricing_service.product.domain.Product;
 import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;
 
@@ -24,14 +22,14 @@ import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepos
 public class QuoteService {
 
     private final ProductRepository productRepository;
-    private final PriceListEntryRepository priceListEntryRepository;
+    private final PriceTierCache priceTierCache;
     private final PriceCalculator priceCalculator;
     private final Clock clock;
 
-    public QuoteService(ProductRepository productRepository, PriceListEntryRepository priceListEntryRepository,
+    public QuoteService(ProductRepository productRepository, PriceTierCache priceTierCache,
                         PriceCalculator priceCalculator, Clock clock) {
         this.productRepository = productRepository;
-        this.priceListEntryRepository = priceListEntryRepository;
+        this.priceTierCache = priceTierCache;
         this.priceCalculator = priceCalculator;
         this.clock = clock;
     }
@@ -54,12 +52,7 @@ public class QuoteService {
             throw new UnknownSkusException(missingSkus);
         }
 
-        Map<String, List<PriceTier>> tiersBySku = new HashMap<>();
-        for (PriceListEntry entry : priceListEntryRepository.findAllByCustomerGroupCodeAndSkuIn(input.customerGroup(), skus)) {
-            tiersBySku.computeIfAbsent(entry.getSku(), ignored -> new ArrayList<>())
-                .add(new PriceTier(entry.getCustomerGroupCode(), entry.getSku(), entry.getMinQty(),
-                    entry.getUnitPriceNet(), entry.getValidFrom(), entry.getValidTo()));
-        }
+        Map<String, List<PriceTier>> tiersBySku = priceTierCache.find(input.customerGroup(), skus);
 
         List<QuoteResult.Line> lines = new ArrayList<>();
         BigDecimal totalNet = new BigDecimal("0.00");
