@@ -16,6 +16,12 @@ spring:
 server:
   port: 8082
 
+order:
+  pricing:
+    base-url: ${CATALOG_PRICING_BASE_URL:http://localhost:8081}
+    connect-timeout: 1s
+    read-timeout: 2s
+
 management:
   endpoints:
     web:

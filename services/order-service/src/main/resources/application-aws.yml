@@ -3,3 +3,7 @@ spring:
     url: ${ORDER_DB_URL}
     username: ${ORDER_DB_USERNAME}
     password: ${ORDER_DB_PASSWORD}
+
+order:
+  pricing:
+    base-url: ${CATALOG_PRICING_BASE_URL}
