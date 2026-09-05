@@ -6,6 +6,7 @@ import com.orderflow.order.config.PricingResilienceProperties;
 import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.InvalidOrderStateException;
 import com.orderflow.order.domain.CustomerNotFoundException;
+import com.orderflow.order.domain.IdempotencyException;
 import com.orderflow.order.infrastructure.pricing.PricingRequestRejectedException;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -44,6 +45,18 @@ public class ApiExceptionHandler {
     public ProblemDetail invalidPlaceOrderRequest(MethodArgumentNotValidException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-order",
             "Invalid order", "The order request is invalid");
+    }
+
+    @ExceptionHandler(IdempotencyException.class)
+    public ProblemDetail idempotency(IdempotencyException exception) {
+        return switch (exception.getReason()) {
+            case KEY_REUSED -> problem(HttpStatus.UNPROCESSABLE_CONTENT, "idempotency-key-reused",
+                "Idempotency key reused", exception.getMessage());
+            case IN_PROGRESS -> problem(HttpStatus.CONFLICT, "idempotency-in-progress",
+                "Order request in progress", exception.getMessage());
+            case STORE_UNAVAILABLE -> problem(HttpStatus.SERVICE_UNAVAILABLE, "idempotency-unavailable",
+                "Idempotency unavailable", exception.getMessage());
+        };
     }
 
     @ExceptionHandler(PricingRequestRejectedException.class)

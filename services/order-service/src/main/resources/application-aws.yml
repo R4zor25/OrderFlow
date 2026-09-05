@@ -3,6 +3,10 @@ spring:
     url: ${ORDER_DB_URL}
     username: ${ORDER_DB_USERNAME}
     password: ${ORDER_DB_PASSWORD}
+  data:
+    redis:
+      host: ${ORDER_REDIS_HOST}
+      port: ${ORDER_REDIS_PORT:6379}
 
 order:
   pricing:

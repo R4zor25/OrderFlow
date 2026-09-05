@@ -5,7 +5,7 @@ import java.time.Duration;
 import java.util.UUID;
 
 import com.orderflow.order.application.PlaceOrderResult;
-import com.orderflow.order.application.PlaceOrderService;
+import com.orderflow.order.application.IdempotentPlaceOrderService;
 import com.orderflow.order.config.PricingResilienceProperties;
 import com.orderflow.order.domain.OrderStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class OrderControllerTest {
 
-    private final PlaceOrderService service = mock(PlaceOrderService.class);
+    private final IdempotentPlaceOrderService service = mock(IdempotentPlaceOrderService.class);
     private MockMvc mvc;
 
     @BeforeEach
@@ -44,10 +44,11 @@ class OrderControllerTest {
     @Test
     void returnsAcceptedPendingOrderAndLocation() throws Exception {
         UUID orderId = UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-        when(service.place(any())).thenReturn(new PlaceOrderResult(orderId, OrderStatus.PENDING, "EUR",
+        when(service.place(any(), any())).thenReturn(new PlaceOrderResult(orderId, OrderStatus.PENDING, "EUR",
             new BigDecimal("169.80"), new BigDecimal("45.85"), new BigDecimal("215.65")));
 
         mvc.perform(post("/api/v1/orders")
+                .header("Idempotency-Key", "request-1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerId":"33333333-3333-4333-8333-333333333333",
@@ -63,6 +64,7 @@ class OrderControllerTest {
     @Test
     void rejectsInvalidLineBeforeCallingApplicationService() throws Exception {
         mvc.perform(post("/api/v1/orders")
+                .header("Idempotency-Key", "request-2")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerId":"33333333-3333-4333-8333-333333333333",
@@ -70,6 +72,18 @@ class OrderControllerTest {
                     """))
             .andExpect(status().isUnprocessableContent())
             .andExpect(jsonPath("$.type").value("/problems/invalid-order"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void requiresIdempotencyKeyHeader() throws Exception {
+        mvc.perform(post("/api/v1/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerId":"33333333-3333-4333-8333-333333333333",
+                     "lines":[{"sku":"CHAIR-001","quantity":2}]}
+                    """))
+            .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }
 }

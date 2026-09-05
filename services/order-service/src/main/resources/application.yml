@@ -17,6 +17,8 @@ server:
   port: 8082
 
 order:
+  idempotency:
+    ttl: 24h
   pricing:
     base-url: ${CATALOG_PRICING_BASE_URL:http://localhost:8081}
     connect-timeout: 1s
