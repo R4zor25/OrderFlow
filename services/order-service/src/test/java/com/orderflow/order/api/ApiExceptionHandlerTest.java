@@ -2,11 +2,13 @@ package com.orderflow.order.api;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
 import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.InvalidOrderStateException;
+import com.orderflow.order.domain.CustomerNotFoundException;
 import com.orderflow.order.config.PricingResilienceProperties;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import com.orderflow.order.infrastructure.pricing.PricingRequestRejectedException;
@@ -65,5 +67,13 @@ class ApiExceptionHandlerTest {
 
         assertThat(problem.getStatus()).isEqualTo(422);
         assertThat(problem.getType()).isEqualTo(URI.create("/problems/pricing-request-rejected"));
+    }
+
+    @Test
+    void mapsMissingCustomerToNotFound() {
+        var problem = handler.customerNotFound(new CustomerNotFoundException(UUID.randomUUID()));
+
+        assertThat(problem.getStatus()).isEqualTo(404);
+        assertThat(problem.getType()).isEqualTo(URI.create("/problems/customer-not-found"));
     }
 }

@@ -5,12 +5,14 @@ import java.net.URI;
 import com.orderflow.order.config.PricingResilienceProperties;
 import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.InvalidOrderStateException;
+import com.orderflow.order.domain.CustomerNotFoundException;
 import com.orderflow.order.infrastructure.pricing.PricingRequestRejectedException;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -31,6 +33,17 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidOrderException.class)
     public ProblemDetail invalidOrder(InvalidOrderException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-order", "Invalid order", exception.getMessage());
+    }
+
+    @ExceptionHandler(CustomerNotFoundException.class)
+    public ProblemDetail customerNotFound(CustomerNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "customer-not-found", "Customer not found", exception.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ProblemDetail invalidPlaceOrderRequest(MethodArgumentNotValidException exception) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-order",
+            "Invalid order", "The order request is invalid");
     }
 
     @ExceptionHandler(PricingRequestRejectedException.class)

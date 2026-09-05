@@ -1,0 +1,15 @@
+{
+  "eventId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "eventType": "OrderPlaced",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:15:31Z",
+  "aggregateId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "payload": {
+    "orderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "customerId": "33333333-3333-4333-8333-333333333333",
+    "customerType": "B2B",
+    "lines": [
+      {"sku": "CHAIR-001", "quantity": 2}
+    ]
+  }
+}
