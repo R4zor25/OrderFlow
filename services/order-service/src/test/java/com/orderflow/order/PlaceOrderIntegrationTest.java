@@ -13,7 +13,7 @@ import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
 import com.orderflow.order.infrastructure.pricing.QuoteRequest;
 import com.orderflow.order.infrastructure.pricing.QuoteResponse;
-import com.orderflow.order.infrastructure.outbox.OrderPlacedOutboxWriter;
+import com.orderflow.order.infrastructure.outbox.OutboxWriter;
 import com.orderflow.order.infrastructure.events.EventEnvelope;
 import com.orderflow.order.infrastructure.events.OrderPlacedPayload;
 import com.orderflow.order.infrastructure.idempotency.RedisIdempotencyStore;
@@ -67,7 +67,7 @@ class PlaceOrderIntegrationTest {
     private PricingGateway pricing;
 
     @MockitoSpyBean
-    private OrderPlacedOutboxWriter outbox;
+    private OutboxWriter outbox;
 
     @Test
     void quotesOutsideTransactionAndWritesOrderWithOutboxAtomically() throws Exception {
@@ -126,7 +126,7 @@ class PlaceOrderIntegrationTest {
         long beforeEvents = jdbc.queryForObject("select count(*) from orders.outbox_event", Long.class);
         when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
         doThrow(new IllegalStateException("Outbox unavailable"))
-            .when(outbox).write(any(), any());
+            .when(outbox).write(any());
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> mvc.perform(post("/api/v1/orders")
             .header("Idempotency-Key", UUID.randomUUID().toString())

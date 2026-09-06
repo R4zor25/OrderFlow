@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.infrastructure.OrderRepository;
+import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,10 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class CancelOrderService {
 
     private final OrderRepository orders;
+    private final OrderOutboxWriter outbox;
     private final Clock clock;
 
-    public CancelOrderService(OrderRepository orders, Clock clock) {
+    public CancelOrderService(OrderRepository orders, OrderOutboxWriter outbox, Clock clock) {
         this.orders = orders;
+        this.outbox = outbox;
         this.clock = clock;
     }
 
@@ -27,8 +30,11 @@ public class CancelOrderService {
             throw new OrderNotFoundException("Order not found: " + id);
         }
         var order = matches.getFirst();
-        order.cancel(clock.instant());
+        var previousStatus = order.getStatus();
+        var now = clock.instant();
+        order.cancel(now);
         orders.flush();
+        outbox.cancelled(order, previousStatus, now);
         return OrderDetails.from(order);
     }
 }

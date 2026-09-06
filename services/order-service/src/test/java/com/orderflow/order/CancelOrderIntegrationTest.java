@@ -15,18 +15,27 @@ import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.domain.OrderStatus;
 import com.orderflow.order.infrastructure.CustomerRepository;
 import com.orderflow.order.infrastructure.OrderRepository;
+import com.orderflow.order.infrastructure.events.EventEnvelope;
+import com.orderflow.order.infrastructure.events.OrderCancelledPayload;
+import com.orderflow.order.infrastructure.outbox.OutboxWriter;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.any;
 
 @SpringBootTest
 @Import(PostgresTestConfiguration.class)
@@ -50,8 +59,17 @@ class CancelOrderIntegrationTest {
     @Autowired
     private TransactionTemplate transactions;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private ObjectMapper json;
+
     @MockitoBean
     private Clock clock;
+
+    @MockitoSpyBean
+    private OutboxWriter outbox;
 
     @Test
     void cancelsPendingOrderAndPersistsNewVersion() {
@@ -70,6 +88,26 @@ class CancelOrderIntegrationTest {
     }
 
     @Test
+    void cancellingOrderPersistsAnEventWithPreviousStatus() {
+        UUID id = createOrder();
+        when(clock.instant()).thenReturn(CANCELLED);
+
+        cancellation.cancel(id);
+
+        String message = jdbc.queryForObject("""
+            select payload::text from orders.outbox_event
+            where aggregate_id = ? and event_type = 'OrderCancelled'
+            """, String.class, id);
+        EventEnvelope<OrderCancelledPayload> event = json.readValue(message, new TypeReference<>() {});
+        assertThat(event.eventType()).isEqualTo("OrderCancelled");
+        assertThat(event.occurredAt()).isEqualTo(CANCELLED);
+        assertThat(event.aggregateId()).isEqualTo(id.toString());
+        assertThat(event.payload().orderId()).isEqualTo(id);
+        assertThat(event.payload().previousStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(event.payload().customerEmail()).isEqualTo("standard@example.test");
+    }
+
+    @Test
     void cancelsConfirmedOrderButRejectsRejectedOrder() {
         UUID confirmedId = createOrder();
         UUID rejectedId = createOrder();
@@ -80,9 +118,33 @@ class CancelOrderIntegrationTest {
         when(clock.instant()).thenReturn(CANCELLED);
 
         assertThat(cancellation.cancel(confirmedId).status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(cancelEvent(confirmedId).payload().previousStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThatThrownBy(() -> cancellation.cancel(rejectedId))
             .isInstanceOf(InvalidOrderStateException.class);
         assertThat(queries.get(rejectedId).status()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from orders.outbox_event where aggregate_id = ?
+            """, Integer.class, rejectedId)).isZero();
+    }
+
+    @Test
+    void outboxFailureRollsBackCancellation() {
+        UUID id = createOrder();
+        when(clock.instant()).thenReturn(CANCELLED);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("Failed after outbox insert");
+        }).when(outbox).write(any());
+
+        assertThatThrownBy(() -> cancellation.cancel(id))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Failed after outbox insert");
+
+        assertThat(queries.get(id).status()).isEqualTo(OrderStatus.PENDING);
+        assertThat(orders.findById(id).orElseThrow().getVersion()).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from orders.outbox_event where aggregate_id = ?
+            """, Integer.class, id)).isZero();
     }
 
     @Test
@@ -115,5 +177,13 @@ class CancelOrderIntegrationTest {
                 new BigDecimal("22.92"), CREATED);
             return orders.saveAndFlush(order).getId();
         });
+    }
+
+    private EventEnvelope<OrderCancelledPayload> cancelEvent(UUID id) {
+        String message = jdbc.queryForObject("""
+            select payload::text from orders.outbox_event
+            where aggregate_id = ? and event_type = 'OrderCancelled'
+            """, String.class, id);
+        return json.readValue(message, new TypeReference<>() {});
     }
 }
