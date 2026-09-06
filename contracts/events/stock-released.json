@@ -1,0 +1,10 @@
+{
+  "eventId": "14141414-1414-4414-8414-141414141414",
+  "eventType": "StockReleased",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:20:10Z",
+  "aggregateId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "payload": {
+    "orderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+  }
+}

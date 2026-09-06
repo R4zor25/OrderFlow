@@ -1,0 +1,13 @@
+{
+  "eventId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "eventType": "OrderRejected",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:16:00Z",
+  "aggregateId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "payload": {
+    "orderId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "customerId": "33333333-3333-4333-8333-333333333333",
+    "customerEmail": "standard@example.test",
+    "reason": "Insufficient stock"
+  }
+}

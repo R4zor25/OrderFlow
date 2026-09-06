@@ -14,6 +14,8 @@ import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
 import com.orderflow.order.infrastructure.pricing.QuoteRequest;
 import com.orderflow.order.infrastructure.pricing.QuoteResponse;
 import com.orderflow.order.infrastructure.outbox.OrderPlacedOutboxWriter;
+import com.orderflow.order.infrastructure.events.EventEnvelope;
+import com.orderflow.order.infrastructure.events.OrderPlacedPayload;
 import com.orderflow.order.infrastructure.idempotency.RedisIdempotencyStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,10 +95,13 @@ class PlaceOrderIntegrationTest {
         String payload = jdbc.queryForObject(
             "select payload::text from orders.outbox_event where aggregate_id = ?", String.class, orderId);
         var event = json.readTree(payload);
+        EventEnvelope<OrderPlacedPayload> typedEvent = json.readValue(payload, new TypeReference<>() {});
         assertThat(event.get("eventType").asText()).isEqualTo("OrderPlaced");
         assertThat(event.get("aggregateId").asText()).isEqualTo(orderId.toString());
         assertThat(event.get("payload").get("customerType").asText()).isEqualTo("B2B");
         assertThat(event.get("payload").get("lines").get(0).get("sku").asText()).isEqualTo("CHAIR-001");
+        assertThat(typedEvent.payload().orderId()).isEqualTo(orderId);
+        assertThat(typedEvent.payload().lines().getFirst().quantity()).isEqualTo(2);
     }
 
     @Test

@@ -1,0 +1,12 @@
+{
+  "eventId": "13131313-1313-4313-8313-131313131313",
+  "eventType": "StockReservationFailed",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:15:45Z",
+  "aggregateId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "payload": {
+    "orderId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "reason": "Insufficient stock",
+    "unavailableSkus": ["CHAIR-001"]
+  }
+}

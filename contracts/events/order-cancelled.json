@@ -1,0 +1,13 @@
+{
+  "eventId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "eventType": "OrderCancelled",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:20:00Z",
+  "aggregateId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "payload": {
+    "orderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "customerId": "33333333-3333-4333-8333-333333333333",
+    "customerEmail": "standard@example.test",
+    "previousStatus": "CONFIRMED"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "eventId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "eventType": "OrderConfirmed",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:16:00Z",
+  "aggregateId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "payload": {
+    "orderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "customerId": "33333333-3333-4333-8333-333333333333",
+    "customerEmail": "standard@example.test",
+    "totalGross": 215.65,
+    "currency": "EUR"
+  }
+}

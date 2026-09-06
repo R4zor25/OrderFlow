@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.orderflow.order.domain.Order;
+import com.orderflow.order.infrastructure.events.EventEnvelope;
+import com.orderflow.order.infrastructure.events.OrderPlacedPayload;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -23,11 +25,12 @@ public class OrderPlacedOutboxWriter {
     public void write(Order order, Instant now) {
         UUID eventId = UUID.randomUUID();
         var lines = order.getLines().stream()
-            .map(line -> new OrderPlacedEvent.Line(line.getSku(), line.getQuantity()))
+            .map(line -> new OrderPlacedPayload.Line(line.getSku(), line.getQuantity()))
             .toList();
-        var payload = new OrderPlacedEvent.Payload(order.getId(), order.getCustomer().getId(),
+        var payload = new OrderPlacedPayload(order.getId(), order.getCustomer().getId(),
             order.getCustomer().getType(), lines);
-        var event = new OrderPlacedEvent(eventId, "OrderPlaced", 1, now, order.getId(), payload);
+        var event = new EventEnvelope<>(eventId, "OrderPlaced", 1, now,
+            order.getId().toString(), payload);
         jdbc.update("""
             insert into orders.outbox_event
                 (id, aggregate_type, aggregate_id, event_type, payload, created_at)

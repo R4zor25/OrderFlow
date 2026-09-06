@@ -1,0 +1,12 @@
+{
+  "eventId": "15151515-1515-4515-8515-151515151515",
+  "eventType": "LowStock",
+  "eventVersion": 1,
+  "occurredAt": "2026-10-01T10:21:00Z",
+  "aggregateId": "CHAIR-001",
+  "payload": {
+    "sku": "CHAIR-001",
+    "available": 3,
+    "threshold": 5
+  }
+}
