@@ -137,7 +137,7 @@ Tables:
 - `customer(id uuid pk, name, email, type varchar check in ('B2C','B2B'), customer_group_code)`, seeded with a few customers
 - `orders(id uuid pk, customer_id fk, status, currency, total_net, total_vat, total_gross, rejection_reason varchar(500) null, created_at, updated_at, version bigint)`; `REJECTED` requires a nonblank reason, other states have none
 - `order_line(id uuid pk, order_id fk, sku, quantity, unit_price_net, line_total_net)`
-- `outbox_event(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb null, created_at, published_at null)` with partial index on `published_at is null`; `headers` carries the trace context (`traceparent`) so the relay can continue the trace
+- `outbox_event(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb null, created_at, delivery_order bigint, published_at null)` with partial indexes on unpublished rows; `delivery_order` protects per-aggregate publication order, and `headers` can carry trace context (`traceparent`) for the relay
 - `processed_event(event_id uuid pk, processed_at)`
 
 State machine (enforced in the domain entity, not in controllers):
@@ -232,7 +232,7 @@ Responsibility: turn business events into customer and ops notifications. Uses M
 | `inventory.stock-events.v1` | inventory-service | order-service, notification-service | orderId (sku for LowStock) | 3 |
 | `<topic>.DLT` | error handlers | none (inspect via Kafka UI) | same | 3 |
 
-Keying by `orderId` guarantees per-order ordering: `OrderCancelled` can never overtake `OrderPlaced` for the same order.
+Keying by `orderId` puts one order's records in the same partition, where Kafka preserves append order. The relay also waits for every earlier unpublished event of that order before sending a later one; the key alone cannot prevent two concurrent relays from sending out of order.
 
 Consumer groups: `inventory-service`, `order-service`, `notification-service`.
 
@@ -274,8 +274,8 @@ Problem: "save to DB, then send to Kafka" loses events if the process dies betwe
 
 Solution: the event row is written in the same transaction as the business change. A relay publishes it afterwards.
 
-- Relay: `@Scheduled(fixedDelay = 500ms)`, reads up to 100 rows with `SELECT ... WHERE published_at IS NULL ORDER BY created_at FOR UPDATE SKIP LOCKED`, sends each with `KafkaTemplate`, waits for the ack, sets `published_at`.
-- `SKIP LOCKED` lets several service instances run the relay without double-publishing the same batch.
+- Relay: `@Scheduled(fixedDelay = 500ms)`, reads up to 100 rows with `SELECT ... WHERE published_at IS NULL ORDER BY created_at FOR UPDATE SKIP LOCKED`, sends each with `KafkaTemplate`, waits for the ack, sets `published_at`. A database-assigned `delivery_order` and an unpublished-predecessor check prevent a later event of the same aggregate from overtaking an earlier one.
+- `SKIP LOCKED` lets several service instances work on distinct rows concurrently. A crash after the Kafka ack can still cause a retry of the same event.
 - Guarantee: at-least-once (a crash after send but before `published_at` update republishes). Consumers are idempotent, so the end result is effectively-once.
 - Producer config: `acks=all`, `enable.idempotence=true`.
 - Cleanup: published rows older than 7 days deleted by a daily job.

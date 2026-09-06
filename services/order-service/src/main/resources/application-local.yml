@@ -7,3 +7,10 @@ spring:
     redis:
       host: localhost
       port: 6379
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9094}
+
+order:
+  outbox:
+    relay:
+      enabled: true

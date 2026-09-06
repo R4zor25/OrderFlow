@@ -12,11 +12,21 @@ spring:
     schemas: orders
     default-schema: orders
     locations: classpath:db/migration/orders
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
 
 server:
   port: 8082
 
 order:
+  outbox:
+    relay:
+      ack-timeout: 10s
   idempotency:
     ttl: 24h
   pricing:

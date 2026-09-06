@@ -7,7 +7,12 @@ spring:
     redis:
       host: ${ORDER_REDIS_HOST}
       port: ${ORDER_REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP}
 
 order:
+  outbox:
+    relay:
+      enabled: true
   pricing:
     base-url: ${CATALOG_PRICING_BASE_URL}
