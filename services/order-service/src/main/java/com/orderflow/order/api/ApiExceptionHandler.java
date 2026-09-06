@@ -11,6 +11,8 @@ import com.orderflow.order.domain.IdempotencyException;
 import com.orderflow.order.infrastructure.pricing.PricingRequestRejectedException;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import jakarta.persistence.OptimisticLockException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidOrderStateException.class)
     public ProblemDetail invalidOrderState(InvalidOrderStateException exception) {
         return problem(HttpStatus.CONFLICT, "invalid-order-state", "Invalid order state", exception.getMessage());
+    }
+
+    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
+    public ProblemDetail orderModifiedConcurrently(Exception exception) {
+        return problem(HttpStatus.CONFLICT, "order-modified-concurrently",
+            "Order modified concurrently", "The order changed while this request was being processed; reload it before retrying");
     }
 
     @ExceptionHandler(InvalidOrderException.class)
