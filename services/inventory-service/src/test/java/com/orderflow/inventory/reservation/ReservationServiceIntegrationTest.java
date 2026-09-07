@@ -3,6 +3,11 @@ package com.orderflow.inventory.reservation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.orderflow.inventory.PostgresTestConfiguration;
 import com.orderflow.inventory.reservation.application.ReservationService;
@@ -108,6 +113,53 @@ class ReservationServiceIntegrationTest {
         ))).isInstanceOf(StockUnavailableException.class);
 
         assertThat(reservationCount(orderId)).isZero();
+    }
+
+    @Test
+    void reservesExactlyAvailableStockUnderConcurrentRequests() throws Exception {
+        String sku = insertStock(10);
+        int attemptCount = 50;
+        CountDownLatch ready = new CountDownLatch(attemptCount);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> results = new ArrayList<>();
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int attempt = 0; attempt < attemptCount; attempt++) {
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    try {
+                        reservationService.reserve(
+                            UUID.randomUUID(), List.of(new ReservationLine(sku, 1))
+                        );
+                        return true;
+                    } catch (StockUnavailableException expected) {
+                        return false;
+                    }
+                }));
+            }
+
+            try {
+                assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            } finally {
+                start.countDown();
+            }
+
+            int successes = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get(30, TimeUnit.SECONDS)) {
+                    successes++;
+                }
+            }
+            assertThat(successes).isEqualTo(10);
+        }
+
+        assertThat(stockValue(sku, "on_hand")).isEqualTo(10);
+        assertThat(stockValue(sku, "reserved")).isEqualTo(10);
+        assertThat(stockValue(sku, "version")).isEqualTo(10);
+        assertThat(jdbc.queryForObject(
+            "select count(*) from inventory.reservation where sku = ?", Integer.class, sku
+        )).isEqualTo(10);
     }
 
     private String insertStock(int onHand) {
