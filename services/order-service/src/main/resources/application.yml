@@ -25,6 +25,8 @@ server:
 
 order:
   outbox:
+    cleanup:
+      cron: "0 0 3 * * *"
     relay:
       ack-timeout: 10s
   idempotency:
@@ -48,4 +50,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics

@@ -7,7 +7,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
 @Configuration(proxyBeanMethods = false)
@@ -16,7 +15,6 @@ public class OutboxRelayConfiguration {
 
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = "order.outbox.relay", name = "enabled", havingValue = "true")
-    @EnableScheduling
     static class EnabledRelayConfiguration {
 
         @Bean
