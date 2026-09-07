@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: inventory-service
+  flyway:
+    schemas: inventory
+    default-schema: inventory
+    locations: classpath:db/migration/inventory
+
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
