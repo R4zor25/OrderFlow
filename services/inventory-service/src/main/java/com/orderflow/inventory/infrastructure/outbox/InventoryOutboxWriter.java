@@ -9,6 +9,7 @@ import java.util.UUID;
 import com.orderflow.inventory.infrastructure.events.EventEnvelope;
 import com.orderflow.inventory.infrastructure.events.StockReservationFailedPayload;
 import com.orderflow.inventory.infrastructure.events.StockReservedPayload;
+import com.orderflow.inventory.infrastructure.events.StockReleasedPayload;
 import com.orderflow.inventory.reservation.domain.ReservationLine;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -42,6 +43,10 @@ public class InventoryOutboxWriter {
     public void failed(UUID orderId, String unavailableSku) {
         write(orderId, "StockReservationFailed",
             new StockReservationFailedPayload(orderId, "Insufficient stock", List.of(unavailableSku)));
+    }
+
+    public void released(UUID orderId) {
+        write(orderId, "StockReleased", new StockReleasedPayload(orderId));
     }
 
     private void write(UUID orderId, String eventType, Object payload) {

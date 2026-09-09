@@ -1,7 +1,9 @@
 package com.orderflow.inventory.reservation.infrastructure;
 
+import java.util.Comparator;
 import java.util.UUID;
 
+import com.orderflow.inventory.reservation.domain.ReservationLine;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -28,5 +30,25 @@ public class ReservationRepository {
                 (id, order_id, sku, quantity, status, created_at)
             values (?, ?, ?, ?, 'RESERVED', now())
             """, UUID.randomUUID(), orderId, sku, quantity);
+    }
+
+    public boolean release(UUID orderId) {
+        var lines = jdbc.query("""
+            update inventory.reservation
+               set status = 'RELEASED'
+             where order_id = ? and status = 'RESERVED'
+            returning sku, quantity
+            """, (rs, row) -> new ReservationLine(rs.getString("sku"), rs.getInt("quantity")), orderId);
+        for (var line : lines.stream().sorted(Comparator.comparing(ReservationLine::sku)).toList()) {
+            int updated = jdbc.update("""
+                update inventory.stock_item
+                   set reserved = reserved - ?, version = version + 1, updated_at = now()
+                 where sku = ? and reserved >= ?
+                """, line.quantity(), line.sku(), line.quantity());
+            if (updated != 1) {
+                throw new IllegalStateException("Cannot release stock for SKU " + line.sku());
+            }
+        }
+        return !lines.isEmpty();
     }
 }
