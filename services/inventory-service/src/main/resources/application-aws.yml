@@ -3,3 +3,9 @@ spring:
     url: ${INVENTORY_DB_URL}
     username: ${INVENTORY_DB_USERNAME}
     password: ${INVENTORY_DB_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP}
+
+inventory:
+  messaging:
+    enabled: true

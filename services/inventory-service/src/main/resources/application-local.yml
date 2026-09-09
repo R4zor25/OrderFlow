@@ -3,3 +3,9 @@ spring:
     url: jdbc:postgresql://localhost:5433/orderflow?currentSchema=inventory
     username: orderflow
     password: ${POSTGRES_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9094}
+
+inventory:
+  messaging:
+    enabled: true

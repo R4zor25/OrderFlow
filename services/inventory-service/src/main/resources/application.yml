@@ -5,6 +5,26 @@ spring:
     schemas: inventory
     default-schema: inventory
     locations: classpath:db/migration/inventory
+  kafka:
+    consumer:
+      group-id: inventory-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+    listener:
+      ack-mode: record
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+
+inventory:
+  outbox:
+    relay:
+      ack-timeout: 10s
 
 server:
   port: 8083
