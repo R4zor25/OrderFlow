@@ -21,4 +21,23 @@ class OrderPlacedListenerTest {
         assertThatThrownBy(() -> listener.onMessage(record))
             .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void rejectsUnknownEventType() {
+        var record = new ConsumerRecord<>("orders.order-events.v1", 0, 0L,
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "{\"eventType\":\"Unexpected\"}");
+
+        assertThatThrownBy(() -> listener.onMessage(record))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void leavesKnownOrderEventsForTheirOwnSteps() {
+        for (String type : new String[]{"OrderCancelled", "OrderConfirmed", "OrderRejected"}) {
+            var record = new ConsumerRecord<>("orders.order-events.v1", 0, 0L,
+                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "{\"eventType\":\"" + type + "\"}");
+
+            listener.onMessage(record);
+        }
+    }
 }

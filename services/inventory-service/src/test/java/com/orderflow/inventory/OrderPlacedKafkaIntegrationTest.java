@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.orderflow.inventory.application.OrderPlacedProcessor;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -22,10 +23,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.dao.TransientDataAccessResourceException;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.kafka.KafkaContainer;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = {
     "inventory.messaging.enabled=true",
@@ -49,6 +56,9 @@ class OrderPlacedKafkaIntegrationTest {
 
     @Autowired
     private ObjectMapper json;
+
+    @MockitoSpyBean
+    private OrderPlacedProcessor processor;
 
     @Test
     void consumesCanonicalOrderPlacedAndPublishesStockReserved() throws Exception {
@@ -117,19 +127,103 @@ class OrderPlacedKafkaIntegrationTest {
         assertThat(result.get("payload").get("unavailableSkus").get(0).asText()).isEqualTo("CHAIR-003");
     }
 
+    @Test
+    void routesMalformedJsonToDltAndContinuesWithNextOrder() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        String key = orderId.toString();
+        String malformed = "{\"eventType\":";
+        var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
+            Instant.parse("2026-10-01T10:15:31Z"), key,
+            new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
+                List.of(new OrderPlacedPayload.Line("CHAIR-002", 1))));
+
+        producer.send("orders.order-events.v1", key, malformed).get(10, TimeUnit.SECONDS);
+        producer.send("orders.order-events.v1", key, json.writeValueAsString(placed))
+            .get(10, TimeUnit.SECONDS);
+
+        var deadLetter = receiveEvent("orders.order-events.v1.DLT", key);
+        assertThat(deadLetter.value()).isEqualTo(malformed);
+        assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-topic").value(),
+            StandardCharsets.UTF_8)).isEqualTo("orders.order-events.v1");
+
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                select count(*) from inventory.reservation where order_id = ?
+                """, Integer.class, orderId)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("""
+                select count(*) from inventory.processed_event where event_id = ?
+                """, Integer.class, eventId)).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void retriesTransientFailureTwiceBeforeReserving() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
+            Instant.parse("2026-10-01T10:15:31Z"), orderId.toString(),
+            new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
+                List.of(new OrderPlacedPayload.Line("CHAIR-004", 1))));
+        doThrow(new TransientDataAccessResourceException("temporary database failure"))
+            .doThrow(new TransientDataAccessResourceException("temporary database failure"))
+            .doCallRealMethod().when(processor).process(any());
+
+        producer.send("orders.order-events.v1", orderId.toString(), json.writeValueAsString(placed))
+            .get(10, TimeUnit.SECONDS);
+
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                select count(*) from inventory.processed_event where event_id = ?
+                """, Integer.class, eventId)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("""
+                select count(*) from inventory.reservation where order_id = ?
+                """, Integer.class, orderId)).isEqualTo(1);
+        });
+        verify(processor, times(3)).process(any());
+    }
+
+    @Test
+    void sendsInvalidOrderToDltWithoutRetrying() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
+            Instant.parse("2026-10-01T10:15:31Z"), orderId.toString(),
+            new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
+                List.of(new OrderPlacedPayload.Line("CHAIR-005", 0))));
+        String value = json.writeValueAsString(placed);
+
+        producer.send("orders.order-events.v1", orderId.toString(), value)
+            .get(10, TimeUnit.SECONDS);
+
+        var deadLetter = receiveEvent("orders.order-events.v1.DLT", orderId.toString());
+        assertThat(deadLetter.value()).isEqualTo(value);
+        verify(processor, times(1)).process(any());
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.processed_event where event_id = ?
+            """, Integer.class, eventId)).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.reservation where order_id = ?
+            """, Integer.class, orderId)).isZero();
+    }
+
     private ConsumerRecord<String, String> receiveStockEvent(UUID orderId) {
+        return receiveEvent("inventory.stock-events.v1", orderId.toString());
+    }
+
+    private ConsumerRecord<String, String> receiveEvent(String topic, String key) {
         try (var consumer = new KafkaConsumer<String, String>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
             ConsumerConfig.GROUP_ID_CONFIG, "inventory-result-test-" + UUID.randomUUID(),
             ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
             ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class))) {
-            consumer.subscribe(List.of("inventory.stock-events.v1"));
+            consumer.subscribe(List.of(topic));
             ConsumerRecord<String, String> found = null;
             Instant deadline = Instant.now().plusSeconds(10);
             while (found == null && Instant.now().isBefore(deadline)) {
                 for (var record : consumer.poll(Duration.ofMillis(500))) {
-                    if (record.value().contains(orderId.toString())) {
+                    if (key.equals(record.key())) {
                         found = record;
                         break;
                     }

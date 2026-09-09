@@ -8,20 +8,28 @@ spring:
   kafka:
     consumer:
       group-id: inventory-service
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       enable-auto-commit: false
       auto-offset-reset: earliest
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
     listener:
       ack-mode: record
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
+      value-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
       acks: all
       properties:
         enable.idempotence: true
 
 inventory:
+  messaging:
+    error:
+      retry-interval: 250ms
+      retry-count: 2
+      dlt-send-timeout: 10s
   outbox:
     relay:
       ack-timeout: 10s

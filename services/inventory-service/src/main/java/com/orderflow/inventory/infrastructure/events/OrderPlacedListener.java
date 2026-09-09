@@ -26,8 +26,10 @@ public class OrderPlacedListener {
         if (type == null || type.isBlank()) {
             throw new IllegalArgumentException("Event type is required");
         }
-        if (!"OrderPlaced".equals(type)) {
-            return;
+        switch (type) {
+            case "OrderPlaced" -> { }
+            case "OrderCancelled", "OrderConfirmed", "OrderRejected" -> { return; }
+            default -> throw new IllegalArgumentException("Unsupported order event type: " + type);
         }
         EventEnvelope<OrderPlacedPayload> event = json.readValue(
             record.value(), new TypeReference<>() {});

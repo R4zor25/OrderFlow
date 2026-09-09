@@ -1,16 +1,22 @@
 package com.orderflow.inventory.config;
 
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.util.backoff.FixedBackOff;
+import tools.jackson.core.JacksonException;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(InventoryOutboxRelayProperties.class)
+@EnableConfigurationProperties({InventoryOutboxRelayProperties.class, InventoryConsumerErrorProperties.class})
 public class InventoryMessagingConfiguration {
 
     @Configuration(proxyBeanMethods = false)
@@ -25,6 +31,25 @@ public class InventoryMessagingConfiguration {
         @Bean
         NewTopic stockEventsTopic() {
             return TopicBuilder.name("inventory.stock-events.v1").partitions(3).replicas(1).build();
+        }
+
+        @Bean
+        NewTopic orderEventsDltTopic() {
+            return TopicBuilder.name("orders.order-events.v1.DLT").partitions(3).replicas(1).build();
+        }
+
+        @Bean
+        DefaultErrorHandler inventoryErrorHandler(KafkaTemplate<String, String> kafka,
+                                                   InventoryConsumerErrorProperties properties) {
+            var recoverer = new DeadLetterPublishingRecoverer(kafka,
+                (record, exception) -> new TopicPartition(record.topic() + ".DLT", record.partition()));
+            recoverer.setFailIfSendResultIsError(true);
+            recoverer.setWaitForSendResultTimeout(properties.dltSendTimeout());
+
+            var handler = new DefaultErrorHandler(recoverer,
+                new FixedBackOff(properties.retryInterval().toMillis(), properties.retryCount()));
+            handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
+            return handler;
         }
 
         @Bean
