@@ -11,6 +11,8 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9094}
 
 order:
+  messaging:
+    enabled: true
   outbox:
     relay:
       enabled: true

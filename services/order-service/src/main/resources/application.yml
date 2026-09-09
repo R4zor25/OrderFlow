@@ -13,9 +13,20 @@ spring:
     default-schema: orders
     locations: classpath:db/migration/orders
   kafka:
+    consumer:
+      group-id: order-service
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
+      value-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
       acks: all
       properties:
         enable.idempotence: true
@@ -24,6 +35,11 @@ server:
   port: 8082
 
 order:
+  messaging:
+    error:
+      retry-interval: 1s
+      retry-count: 3
+      dlt-send-timeout: 10s
   outbox:
     cleanup:
       cron: "0 0 3 * * *"

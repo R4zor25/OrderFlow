@@ -11,6 +11,8 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP}
 
 order:
+  messaging:
+    enabled: true
   outbox:
     relay:
       enabled: true
