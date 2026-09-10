@@ -4,6 +4,23 @@ micronaut:
   server:
     port: 8084
 
+notification:
+  messaging:
+    enabled: false
+
+kafka:
+  health:
+    enabled: false
+  consumers:
+    default:
+      key.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value.deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto.offset.reset: earliest
+  producers:
+    default:
+      key.serializer: org.apache.kafka.common.serialization.StringSerializer
+      value.serializer: org.apache.kafka.common.serialization.StringSerializer
+
 datasources:
   default:
     driver-class-name: org.postgresql.Driver

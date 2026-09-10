@@ -3,3 +3,7 @@ datasources:
     url: jdbc:postgresql://localhost:5433/orderflow?currentSchema=notifications
     username: orderflow
     password: ${POSTGRES_PASSWORD}
+
+kafka:
+  bootstrap:
+    servers: ${KAFKA_BOOTSTRAP:localhost:9094}

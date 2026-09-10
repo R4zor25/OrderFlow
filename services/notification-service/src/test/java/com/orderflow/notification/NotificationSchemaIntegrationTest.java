@@ -1,10 +1,12 @@
 package com.orderflow.notification;
 
 import io.micronaut.data.connection.annotation.Connectable;
+import io.micronaut.context.BeanContext;
 import io.micronaut.runtime.server.EmbeddedServer;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
 import jakarta.inject.Inject;
+import com.orderflow.notification.messaging.NotificationEventListener;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -37,6 +39,14 @@ class NotificationSchemaIntegrationTest implements TestPropertyProvider {
 
     @Inject
     EmbeddedServer server;
+
+    @Inject
+    BeanContext beanContext;
+
+    @Test
+    void listenerIsDisabledWithoutPersistenceStep() {
+        assertThat(beanContext.findBean(NotificationEventListener.class)).isEmpty();
+    }
 
     @Override
     public Map<String, String> getProperties() {
