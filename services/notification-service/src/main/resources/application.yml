@@ -1,0 +1,21 @@
+micronaut:
+  application:
+    name: notification-service
+  server:
+    port: 8084
+
+datasources:
+  default:
+    driver-class-name: org.postgresql.Driver
+    db-type: postgres
+    dialect: POSTGRES
+
+flyway:
+  datasources:
+    default:
+      enabled: true
+      schemas:
+        - notifications
+      default-schema: notifications
+      locations:
+        - classpath:db/migration/notifications
