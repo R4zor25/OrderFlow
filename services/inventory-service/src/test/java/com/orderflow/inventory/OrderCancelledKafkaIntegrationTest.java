@@ -78,7 +78,7 @@ class OrderCancelledKafkaIntegrationTest {
             assertThat(jdbc.queryForObject("""
                 select count(*) from inventory.outbox_event
                  where aggregate_id = ? and event_type = 'StockReleased'
-                """, Integer.class, orderId)).isEqualTo(1);
+                """, Integer.class, orderId.toString())).isEqualTo(1);
         });
 
         ConsumerRecord<String, String> released = receiveReleased(orderId);

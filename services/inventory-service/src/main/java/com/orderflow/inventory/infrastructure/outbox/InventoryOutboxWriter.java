@@ -7,6 +7,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 import com.orderflow.inventory.infrastructure.events.EventEnvelope;
+import com.orderflow.inventory.infrastructure.events.LowStockPayload;
 import com.orderflow.inventory.infrastructure.events.StockReservationFailedPayload;
 import com.orderflow.inventory.infrastructure.events.StockReservedPayload;
 import com.orderflow.inventory.infrastructure.events.StockReleasedPayload;
@@ -37,29 +38,33 @@ public class InventoryOutboxWriter {
         var eventLines = quantityBySku.entrySet().stream()
             .map(entry -> new StockReservedPayload.Line(entry.getKey(), entry.getValue()))
             .toList();
-        write(orderId, "StockReserved", new StockReservedPayload(orderId, eventLines));
+        write("Order", orderId.toString(), "StockReserved", new StockReservedPayload(orderId, eventLines));
     }
 
     public void failed(UUID orderId, String unavailableSku) {
-        write(orderId, "StockReservationFailed",
+        write("Order", orderId.toString(), "StockReservationFailed",
             new StockReservationFailedPayload(orderId, "Insufficient stock", List.of(unavailableSku)));
     }
 
     public void released(UUID orderId) {
-        write(orderId, "StockReleased", new StockReleasedPayload(orderId));
+        write("Order", orderId.toString(), "StockReleased", new StockReleasedPayload(orderId));
     }
 
-    private void write(UUID orderId, String eventType, Object payload) {
+    public void lowStock(String sku, int available, int threshold) {
+        write("StockItem", sku, "LowStock", new LowStockPayload(sku, available, threshold));
+    }
+
+    private void write(String aggregateType, String aggregateId, String eventType, Object payload) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Outbox write requires an active transaction");
         }
         var event = new EventEnvelope<>(UUID.randomUUID(), eventType, 1,
-            clock.instant(), orderId.toString(), payload);
+            clock.instant(), aggregateId, payload);
         jdbc.update("""
             insert into inventory.outbox_event
                 (id, aggregate_type, aggregate_id, event_type, payload, created_at)
-            values (?, 'Order', ?, ?, ?::jsonb, ?)
-            """, event.eventId(), orderId, eventType,
+            values (?, ?, ?, ?, ?::jsonb, ?)
+            """, event.eventId(), aggregateType, aggregateId, eventType,
             json.writeValueAsString(event), Timestamp.from(event.occurredAt()));
     }
 }

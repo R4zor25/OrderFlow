@@ -76,7 +76,7 @@ class OrderPlacedKafkaIntegrationTest {
             assertThat(jdbc.queryForObject("""
                 select published_at is not null from inventory.outbox_event
                 where aggregate_id = ? and event_type = 'StockReserved'
-                """, Boolean.class, ORDER_ID)).isTrue();
+                """, Boolean.class, ORDER_ID.toString())).isTrue();
         });
 
         var found = receiveStockEvent(ORDER_ID);
@@ -114,7 +114,7 @@ class OrderPlacedKafkaIntegrationTest {
             assertThat(jdbc.queryForObject("""
                 select published_at is not null from inventory.outbox_event
                 where aggregate_id = ? and event_type = 'StockReservationFailed'
-                """, Boolean.class, orderId)).isTrue();
+                """, Boolean.class, orderId.toString())).isTrue();
         });
 
         var found = receiveStockEvent(orderId);

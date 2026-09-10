@@ -57,13 +57,13 @@ public class InventoryOutboxRelay {
             for update of event skip locked
             """, (rs, rowNum) -> new PendingEvent(
             rs.getObject("id", UUID.class),
-            rs.getObject("aggregate_id", UUID.class),
+            rs.getString("aggregate_id"),
             rs.getString("event_type"),
             rs.getString("payload"),
             rs.getString("headers")));
 
         for (var event : events) {
-            var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId().toString(), event.payload());
+            var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
             if (event.headers() != null) {
                 var traceparent = json.readTree(event.headers()).path("traceparent").asString(null);
@@ -92,6 +92,6 @@ public class InventoryOutboxRelay {
         return events.size();
     }
 
-    private record PendingEvent(UUID id, UUID aggregateId, String eventType, String payload, String headers) {
+    private record PendingEvent(UUID id, String aggregateId, String eventType, String payload, String headers) {
     }
 }

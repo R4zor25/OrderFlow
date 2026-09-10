@@ -37,6 +37,15 @@ class InventorySchemaIntegrationTest {
     }
 
     @Test
+    void outboxAggregateIdStoresText() {
+        assertThat(jdbc.queryForObject("""
+            select data_type from information_schema.columns
+            where table_schema = 'inventory' and table_name = 'outbox_event'
+              and column_name = 'aggregate_id'
+            """, String.class)).isEqualTo("character varying");
+    }
+
+    @Test
     @Transactional
     void rejectsNegativeOnHand() {
         insertStock("TEST-NEG-HAND");

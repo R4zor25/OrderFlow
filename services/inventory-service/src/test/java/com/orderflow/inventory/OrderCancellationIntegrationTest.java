@@ -47,7 +47,7 @@ class OrderCancellationIntegrationTest {
     @AfterEach
     void removeTestRows() {
         for (UUID orderId : orderIds) {
-            jdbc.update("delete from inventory.outbox_event where aggregate_id = ?", orderId);
+            jdbc.update("delete from inventory.outbox_event where aggregate_id = ?", orderId.toString());
             jdbc.update("delete from inventory.reservation where order_id = ?", orderId);
         }
         for (UUID eventId : eventIds) {
@@ -83,7 +83,7 @@ class OrderCancellationIntegrationTest {
         var message = json.readTree(jdbc.queryForObject("""
             select payload::text from inventory.outbox_event
              where aggregate_id = ? and event_type = 'StockReleased'
-            """, String.class, orderId));
+            """, String.class, orderId.toString()));
         assertThat(message.get("aggregateId").asText()).isEqualTo(orderId.toString());
         assertThat(message.get("payload").get("orderId").asText()).isEqualTo(orderId.toString());
     }
@@ -188,6 +188,6 @@ class OrderCancellationIntegrationTest {
         return jdbc.queryForObject("""
             select count(*) from inventory.outbox_event
              where aggregate_id = ? and event_type = 'StockReleased'
-            """, Integer.class, orderId);
+            """, Integer.class, orderId.toString());
     }
 }

@@ -40,7 +40,7 @@ class OrderPlacedProcessingIntegrationTest {
     @AfterEach
     void removeTestRows() {
         for (UUID orderId : testOrderIds) {
-            jdbc.update("delete from inventory.outbox_event where aggregate_id = ?", orderId);
+            jdbc.update("delete from inventory.outbox_event where aggregate_id = ?", orderId.toString());
         }
         for (UUID eventId : testEventIds) {
             jdbc.update("delete from inventory.processed_event where event_id = ?", eventId);
@@ -157,14 +157,15 @@ class OrderPlacedProcessingIntegrationTest {
 
     private int outboxCount(UUID orderId) {
         return jdbc.queryForObject(
-            "select count(*) from inventory.outbox_event where aggregate_id = ?", Integer.class, orderId
+            "select count(*) from inventory.outbox_event where aggregate_id = ?", Integer.class,
+            orderId.toString()
         );
     }
 
     private JsonNode resultPayload(UUID orderId) {
         String payload = jdbc.queryForObject("""
             select payload::text from inventory.outbox_event where aggregate_id = ?
-            """, String.class, orderId);
+            """, String.class, orderId.toString());
         return json.readTree(payload);
     }
 }
