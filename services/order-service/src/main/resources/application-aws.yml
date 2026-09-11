@@ -18,3 +18,10 @@ order:
       enabled: true
   pricing:
     base-url: ${CATALOG_PRICING_BASE_URL}
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db,redis,kafka

@@ -10,6 +10,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups;
 import org.springframework.context.annotation.Import;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,10 +21,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CatalogPricingServiceApplicationTests {
 
 	private final DataSource dataSource;
+	private final HealthEndpointGroups healthGroups;
 
 	@Autowired
-	CatalogPricingServiceApplicationTests(DataSource dataSource) {
+	CatalogPricingServiceApplicationTests(DataSource dataSource, HealthEndpointGroups healthGroups) {
 		this.dataSource = dataSource;
+		this.healthGroups = healthGroups;
+	}
+
+	@Test
+	void baseReadinessUsesDatabaseWithoutRequiringRedis() {
+		assertThat(healthGroups.get("readiness")).isNotNull();
+		assertThat(healthGroups.get("readiness").isMember("readinessState")).isTrue();
+		assertThat(healthGroups.get("readiness").isMember("db")).isTrue();
+		assertThat(healthGroups.get("readiness").isMember("redis")).isFalse();
 	}
 
 	@Test

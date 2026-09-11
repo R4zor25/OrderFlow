@@ -7,3 +7,10 @@ spring:
     redis:
       host: ${CATALOG_REDIS_HOST}
       port: ${CATALOG_REDIS_PORT:6379}
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db,redis

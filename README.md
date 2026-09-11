@@ -4,7 +4,9 @@ OrderFlow is a B2B/B2C e-commerce backend built as a set of services. The target
 
 ## Current state
 
-The repository contains a Maven aggregator, Spring Boot `catalog-pricing-service` and `order-service` modules, and local infrastructure in Docker Compose. The catalog service connects to PostgreSQL, applies Flyway migrations for its `catalog` schema, exposes Actuator health, and provides product reads, creation, price quotes, and price-list updates. The order service has its own `orders` schema, four sample customers, and an `Order` aggregate with persisted lines; order HTTP endpoints come in later steps. Frequently read price tiers are cached in Redis. Messaging features and the other services shown in the architecture document are planned.
+The Maven aggregator builds three Spring Boot services and one Micronaut service. The catalog service provides products and Redis-cached price quotes. The order service creates, queries and cancels orders, using Redis for HTTP idempotency and a PostgreSQL transactional outbox for events. The inventory service consumes order events, reserves or releases stock, and publishes reservation results and low-stock events. The notification service stores notifications idempotently and attempts delivery through SMTP or logging after the database commit.
+
+Each service owns its PostgreSQL schema and applies Flyway migrations. Kafka carries the order and inventory events; the order service confirms or rejects pending orders from inventory results. Notification delivery is a single attempt after persistence, so a failure or crash can leave an email undelivered.
 
 ## Build and test
 
@@ -14,7 +16,7 @@ JDK 25 is required. The Maven Wrapper supplies the Maven version.
 ./mvnw verify
 ```
 
-The root POM builds both services. To build either independently, run `./mvnw verify` from its directory under `services/`. The database and API tests start temporary PostgreSQL and Redis Testcontainers, so Docker must be running.
+The root POM builds all four services. To build one independently, run `./mvnw verify` from its directory under `services/`. Integration tests start temporary PostgreSQL, Redis and Kafka Testcontainers as needed, so Docker must be running.
 
 ## Run locally
 
@@ -60,9 +62,9 @@ Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, 
 
 The PUT example above changes the local seed price for `CHAIR-001`. `PUT /api/v1/products/{sku}/prices` replaces the full price-tier list for one customer group and SKU. An empty `tiers` array clears that group's tiers. A successful update returns 204 and invalidates the corresponding Redis cache entry after the database transaction commits. Repeating a quote for the same group and SKU reads its tiers from Redis; cache entries expire after 10 minutes. The `local` profile connects to Redis at `localhost:6379`; the `aws` profile reads `CATALOG_REDIS_HOST` and optional `CATALOG_REDIS_PORT` (default 6379).
 
-## Order service skeleton
+## Order service
 
-The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. The domain model can create a `PENDING` order with its priced lines, but no HTTP order creation endpoint exists yet. The state transition methods are added in the next learning step.
+The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. `POST /api/v1/orders` accepts an `Idempotency-Key` header and creates a priced `PENDING` order with HTTP 202. `GET /api/v1/orders/{id}` and `GET /api/v1/orders` provide reads; `POST /api/v1/orders/{id}/cancel` cancels an eligible order. Inventory result events confirm or reject pending orders, and cancellation events release reservations.
 
 With Compose running and `POSTGRES_PASSWORD` set to the value in `infra/.env`, start it separately:
 
@@ -72,3 +74,25 @@ cd services/order-service
 ```
 
 Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`.
+
+
+## Health probes and shutdown
+
+With the `local` profile/environment active, use these endpoints:
+
+| Service | Port | Liveness | Readiness | Readiness dependencies |
+|---|---|---|---|---|
+| catalog-pricing-service | 8081 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Redis |
+| order-service | 8082 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Redis, Kafka |
+| inventory-service | 8083 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Kafka |
+| notification-service | 8084 | `/health/liveness` | `/health/readiness` | PostgreSQL, Kafka |
+
+Healthy probes return HTTP 200 and `{"status":"UP"}`; an unavailable required dependency makes readiness return HTTP 503. Responses hide component and exception details. External dependencies are excluded from liveness. Probe results signal availability; they do not themselves block business endpoints or stop Kafka listeners.
+
+The Spring `aws` profiles select the same readiness dependencies as `local`. The base Spring configurations include only application readiness state and the database, supporting contexts with messaging/cache disabled. The Micronaut base configuration disables Kafka consumption and Kafka health; `local` enables both. Other notification deployment configurations must enable both `notification.messaging.enabled` and `kafka.health.enabled`. For Micronaut local runs, select the environment with `MICRONAUT_ENVIRONMENTS=local`.
+
+Kafka readiness checks broker metadata availability, not consumer partition assignment or successful event processing. Database pool waits are configured to 2 seconds, validation to 1 second, and Redis/Kafka health waits to 2 seconds. These individual limits are not a strict bound on total readiness response latency.
+
+Spring explicitly enables graceful HTTP shutdown with a 20-second timeout **per lifecycle phase**. Micronaut enables graceful shutdown with a 20-second grace period. Integration tests verify that an active HTTP request can finish while application shutdown waits. Total process shutdown may take longer than one grace period.
+
+For deployment, configure the load balancer to check readiness and coordinate target draining with application shutdown. The external container stop timeout must allow the measured total shutdown duration plus margin. ECS and ALB resources are not configured by this change. ALB health thresholds delay target state changes, and ALB may fail open when all targets are unhealthy.

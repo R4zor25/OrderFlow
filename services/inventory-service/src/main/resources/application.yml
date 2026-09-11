@@ -1,6 +1,12 @@
 spring:
   application:
     name: inventory-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    hikari:
+      connection-timeout: 2000
+      validation-timeout: 1000
   flyway:
     schemas: inventory
     default-schema: inventory
@@ -26,6 +32,8 @@ spring:
 
 inventory:
   messaging:
+    health:
+      timeout: 2s
     error:
       retry-interval: 250ms
       retry-count: 2
@@ -36,9 +44,19 @@ inventory:
 
 server:
   port: 8083
+  shutdown: graceful
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db

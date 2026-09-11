@@ -1,6 +1,16 @@
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   application:
     name: order-service
+  datasource:
+    hikari:
+      connection-timeout: 2000
+      validation-timeout: 1000
+  data:
+    redis:
+      connect-timeout: 2s
+      timeout: 2s
   jpa:
     open-in-view: false
     hibernate:
@@ -32,9 +42,13 @@ spring:
         enable.idempotence: true
 
 server:
+  shutdown: graceful
   port: 8082
 
 order:
+  health:
+    kafka:
+      timeout: 2s
   messaging:
     error:
       retry-interval: 1s
@@ -63,6 +77,17 @@ order:
       half-open-permitted-calls: 2
 
 management:
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
   endpoints:
     web:
       exposure:

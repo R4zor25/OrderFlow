@@ -69,9 +69,9 @@ class OrderCancelledKafkaIntegrationTest {
             assertThat(jdbc.queryForObject("""
                 select reserved from inventory.stock_item where sku = ?
                 """, Integer.class, sku)).isZero();
-            assertThat(jdbc.queryForObject("""
+            assertThat(jdbc.queryForList("""
                 select status from inventory.reservation where order_id = ? and sku = ?
-                """, String.class, orderId, sku)).isEqualTo("RELEASED");
+                """, String.class, orderId, sku)).containsExactly("RELEASED");
             assertThat(jdbc.queryForObject("""
                 select count(*) from inventory.processed_event where event_id in (?, ?)
                 """, Integer.class, placedId, cancelledId)).isEqualTo(2);
