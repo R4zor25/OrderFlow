@@ -1,10 +1,15 @@
 micronaut:
   application:
     name: notification-service
+  email:
+    from:
+      email: ${NOTIFICATION_FROM_EMAIL:notifications@orderflow.test}
   server:
     port: 8084
 
 notification:
+  channel: LOG
+  ops-email: ${NOTIFICATION_OPS_EMAIL:ops@orderflow.test}
   messaging:
     enabled: false
 
@@ -36,3 +41,6 @@ flyway:
       default-schema: notifications
       locations:
         - classpath:db/migration/notifications
+
+javamail:
+  enabled: false

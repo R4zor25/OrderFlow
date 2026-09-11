@@ -1,5 +1,6 @@
 package com.orderflow.notification.messaging;
 
+import com.orderflow.notification.application.NotificationProcessor;
 import io.micronaut.configuration.kafka.annotation.ErrorStrategy;
 import io.micronaut.configuration.kafka.annotation.ErrorStrategyValue;
 import io.micronaut.configuration.kafka.annotation.KafkaListener;
@@ -20,11 +21,14 @@ public final class NotificationEventListener {
 
     private final NotificationEventDecoder decoder;
     private final NotificationDeadLetterPublisher deadLetterPublisher;
+    private final NotificationProcessor processor;
 
     public NotificationEventListener(NotificationEventDecoder decoder,
-                                     NotificationDeadLetterPublisher deadLetterPublisher) {
+                                     NotificationDeadLetterPublisher deadLetterPublisher,
+                                     NotificationProcessor processor) {
         this.decoder = decoder;
         this.deadLetterPublisher = deadLetterPublisher;
+        this.processor = processor;
     }
 
     @Topic({NotificationEventDecoder.ORDER_TOPIC, NotificationEventDecoder.STOCK_TOPIC})
@@ -37,8 +41,7 @@ public final class NotificationEventListener {
                 return;
             }
             NotificationEvent event = decoded.orElseThrow();
-            log.info("Decoded notification event type={}, eventId={}, aggregateId={}",
-                    event.eventType(), event.eventId(), event.aggregateId());
+            processor.process(event);
         } catch (InvalidNotificationEventException invalid) {
             deadLetterPublisher.publish(record.topic() + ".DLT", record.key(), record.value());
             log.warn("Invalid notification event moved to DLT at topic={}, partition={}, offset={}",

@@ -4,6 +4,22 @@ datasources:
     username: orderflow
     password: ${POSTGRES_PASSWORD}
 
+notification:
+  channel: SMTP
+  messaging:
+    enabled: true
+
 kafka:
+  health:
+    enabled: true
   bootstrap:
     servers: ${KAFKA_BOOTSTRAP:localhost:9094}
+
+javamail:
+  enabled: true
+  properties:
+    mail.smtp.host: ${SMTP_HOST:localhost}
+    mail.smtp.port: ${SMTP_PORT:1025}
+    mail.smtp.connectiontimeout: 5000
+    mail.smtp.timeout: 5000
+    mail.smtp.writetimeout: 5000

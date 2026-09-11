@@ -18,7 +18,7 @@ class NotificationEventListenerTest {
 
     private final RecordingPublisher publisher = new RecordingPublisher();
     private final NotificationEventListener listener =
-            new NotificationEventListener(new NotificationEventDecoder(JsonMapper.createDefault()), publisher);
+            new NotificationEventListener(new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null);
 
     @Test
     void ignoresUnknownEventWithoutDeadLettering() throws Exception {

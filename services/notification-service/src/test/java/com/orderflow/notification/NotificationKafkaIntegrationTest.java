@@ -16,10 +16,18 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.testcontainers.kafka.KafkaContainer;
+import org.testcontainers.containers.GenericContainer;
+import io.micronaut.json.JsonMapper;
+import jakarta.inject.Inject;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -35,9 +43,16 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
     private static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.3.1");
     private static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17.11-bookworm");
 
+    private static final GenericContainer<?> mailpit = new GenericContainer<>("axllent/mailpit:v1.31.2")
+            .withExposedPorts(1025, 8025);
+
+    @Inject
+    JsonMapper jsonMapper;
+
     static {
         kafka.start();
         postgres.start();
+        mailpit.start();
         try (var admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
                 kafka.getBootstrapServers()))) {
             admin.createTopics(List.of(
@@ -53,19 +68,27 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
 
     @Override
     public Map<String, String> getProperties() {
-        return Map.of(
-                "kafka.bootstrap.servers", kafka.getBootstrapServers(),
-                "kafka.health.enabled", "true",
-                "notification.messaging.enabled", "true",
-                "datasources.default.url", postgres.getJdbcUrl(),
-                "datasources.default.username", postgres.getUsername(),
-                "datasources.default.password", postgres.getPassword(),
-                "datasources.default.driver-class-name", "org.postgresql.Driver"
+        return Map.ofEntries(
+                Map.entry("kafka.bootstrap.servers", kafka.getBootstrapServers()),
+                Map.entry("kafka.health.enabled", "true"),
+                Map.entry("notification.messaging.enabled", "true"),
+                Map.entry("notification.channel", "SMTP"),
+                Map.entry("notification.ops-email", "ops@orderflow.test"),
+                Map.entry("javamail.enabled", "true"),
+                Map.entry("javamail.properties.mail.smtp.host", mailpit.getHost()),
+                Map.entry("javamail.properties.mail.smtp.port", mailpit.getMappedPort(1025).toString()),
+                Map.entry("javamail.properties.mail.smtp.connectiontimeout", "5000"),
+                Map.entry("javamail.properties.mail.smtp.timeout", "5000"),
+                Map.entry("javamail.properties.mail.smtp.writetimeout", "5000"),
+                Map.entry("datasources.default.url", postgres.getJdbcUrl()),
+                Map.entry("datasources.default.username", postgres.getUsername()),
+                Map.entry("datasources.default.password", postgres.getPassword()),
+                Map.entry("datasources.default.driver-class-name", "org.postgresql.Driver")
         );
     }
 
     @Test
-    void consumesBothTopicsSkipsUnknownTypeAndDeadLettersMalformedJson() throws Exception {
+    void sendsOnceForDuplicateEventAndDeadLettersMalformedJson() throws Exception {
         var orderKey = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
         var confirmed = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
         var unknown = confirmed.replace("OrderConfirmed", "OrderShipped");
@@ -76,14 +99,21 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class))) {
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, confirmed)).get();
+            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, confirmed)).get();
+            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, confirmed)).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, unknown)).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, "{broken-json")).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.STOCK_TOPIC, "CHAIR-001", lowStock)).get();
         }
 
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
-            assertThat(committedRecords(NotificationEventDecoder.ORDER_TOPIC)).isEqualTo(3);
+            assertThat(committedRecords(NotificationEventDecoder.ORDER_TOPIC)).isEqualTo(5);
             assertThat(committedRecords(NotificationEventDecoder.STOCK_TOPIC)).isEqualTo(1);
+            assertThat(notificationCount("cccccccc-cccc-4ccc-8ccc-cccccccccccc")).isEqualTo(1);
+            assertThat(notificationCount("15151515-1515-4515-8515-151515151515")).isEqualTo(1);
+            var messages = mailpitMessages();
+            assertThat(messages).hasSize(2);
+            assertThat(messages.toString()).contains("ops@orderflow.test", "Low stock CHAIR-001", "Order confirmed");
         });
 
         try (var consumer = new KafkaConsumer<String, String>(Map.of(
@@ -104,6 +134,15 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
         }
     }
 
+    private List<?> mailpitMessages() throws Exception {
+        var url = URI.create("http://" + mailpit.getHost() + ":" + mailpit.getMappedPort(8025) + "/api/v1/messages");
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(HttpRequest.newBuilder(url).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            return (List<?>) jsonMapper.readValue(response.body(), Map.class).get("messages");
+        }
+    }
+
     private long committedRecords(String topic) throws Exception {
         try (var admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
                 kafka.getBootstrapServers()))) {
@@ -112,6 +151,20 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                     .filter(entry -> entry.getKey().topic().equals(topic))
                     .mapToLong(entry -> entry.getValue().offset())
                     .sum();
+        }
+    }
+
+    private long notificationCount(String eventId) throws Exception {
+        try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(),
+                postgres.getUsername(), postgres.getPassword());
+             var statement = connection.prepareStatement("""
+                     select count(*) from notifications.notification where event_id = ?
+                     """)) {
+            statement.setObject(1, UUID.fromString(eventId));
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
         }
     }
 }
