@@ -355,6 +355,14 @@ Performance:
 - Actuator exposes Hikari active/idle/pending/max/min gauges on the Spring services. Pool pressure is distinct from HTTP concurrency; pending borrowers wait for a connection, not necessarily for a PostgreSQL lock.
 - Size the total database connection budget across service replicas plus operational clients. Benchmark pool overrides of 5/50 do not change the application default or assert an optimal production size.
 
+Container packaging:
+
+- Every service builds independently from its service directory with a multi-stage Dockerfile and an allowlist build context. The builder uses the Java 25 JDK and the existing Maven wrapper; the final runtime uses `eclipse-temurin:25-jre`.
+- Spring Boot JARs are extracted into dependency, loader, snapshot and application layers. Micronaut uses its existing executable JAR. Maven artifacts are stored in a BuildKit cache mount, outside the final image.
+- Runtime UID/GID is 10001. Java runs directly as PID 1 with `-XX:MaxRAMPercentage=75`; deployment must set a memory limit and budget native memory separately. Configuration and credentials are supplied at runtime.
+- Native Apple Silicon builds produce Linux ARM64 images, matching the intended ARM64 Fargate deployment. Other target architectures require an explicit build and verification.
+- `scripts/tests_docker/test_images.py` builds and starts all images with disposable real dependencies and checks health, runtime identity, heap sizing and SIGTERM shutdown. Full application Compose orchestration is the next step.
+
 ## 7. Repository layout
 
 ```

@@ -153,3 +153,43 @@ Ports 8082 and 8083 provide the same measurements for order and inventory. Catal
 Connection limits are per instance, not a global limit across the deployment. Budget the sum of all service replicas' pool maxima plus migration, monitoring and administrative connections against the database limit, allowing operational headroom.
 
 [`scripts/benchmark_quote.py`](scripts/benchmark_quote.py) compares the real quote endpoint using platform/virtual threads and pools of 5/50 under identical resource limits. The benchmark overrides are temporary; the application default remains 10. See [benchmark instructions](scripts/README.md#quote-throughput-and-pool-pressure). Local measurements describe this workload and machine; they do not establish a universally optimal pool size.
+
+## Container images
+
+Each service has its own multi-stage Dockerfile and an allowlist `.dockerignore`.
+Build from the repository root using the service directory as the build context:
+
+```bash
+docker build -t orderflow/catalog-pricing-service:local services/catalog-pricing-service
+docker build -t orderflow/order-service:local services/order-service
+docker build -t orderflow/inventory-service:local services/inventory-service
+docker build -t orderflow/notification-service:local services/notification-service
+```
+
+The builder uses Java 25 JDK and the service Maven wrapper. BuildKit caches Maven
+artifacts separately from image layers. Image packaging skips test execution;
+run `./mvnw verify` before building a release. The final image uses
+`eclipse-temurin:25-jre`, runs as UID/GID 10001, and starts Java directly as PID 1
+with `-XX:MaxRAMPercentage=75`. Spring images use extracted Boot layers;
+notification uses its existing executable Micronaut JAR.
+
+Set a container memory limit when running an image. The heap percentage leaves
+room for native memory but does not guarantee freedom from OOM. Configuration,
+including database credentials and dependency addresses, is supplied at runtime.
+`EXPOSE` documents the service port; publish it explicitly with `-p` when needed.
+Builds on Apple Silicon target the native Linux ARM64 platform by default, which
+matches the intended ARM64 deployment. For an AMD64 target, build explicitly with
+`docker buildx build --platform linux/amd64 --load ...` and test that image.
+
+To build and verify all four images against disposable PostgreSQL, Redis and
+Kafka dependencies:
+
+```bash
+python3 -m unittest discover -s scripts/tests_docker -v
+```
+
+The verifier checks readiness/liveness, the runtime user, Java PID 1, absence of
+build tools, container-aware heap sizing and SIGTERM shutdown. It removes its own
+containers, network and image tags; raw evidence remains under ignored
+`target/image-verification/`. The infrastructure Compose file currently starts
+only dependencies; application orchestration is the next integration step.

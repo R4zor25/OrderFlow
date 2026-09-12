@@ -116,3 +116,24 @@ that 50 connections should replace the default 10 in production.
 Warm-up errors are retained separately in each run JSON and printed during the run.
 A run aborts if warm-up has no successful quote; transient overload during warm-up
 does not discard the later measured phase. Measured errors remain in the results.
+
+## Service image verification
+
+With Docker Desktop running, execute from the repository root:
+
+```bash
+./mvnw verify
+python3 -m unittest discover -s scripts/tests_docker -v
+```
+
+These four integration tests build the service Dockerfiles using service-local
+contexts. Each image runs with 512 MiB and one CPU against a uniquely named
+PostgreSQL/Redis/Kafka stack. Tests verify real HTTP readiness and liveness,
+non-root execution, Java as PID 1, heap configuration, absence of build tools and
+shutdown without OOM or forced SIGKILL. They run separately from the fast Python
+measurement-helper tests. The first build downloads JDK/JRE images and Maven
+artifacts; later builds reuse BuildKit's cache.
+
+Evidence is retained under ignored `target/image-verification/<project>/`.
+Owned containers, dependency volumes/network and verification image tags are
+removed after the suite. Existing local infrastructure and BuildKit caches remain.
