@@ -1,10 +1,17 @@
 spring:
+  threads:
+    virtual:
+      enabled: true
+  main:
+    keep-alive: true
   application:
     name: inventory-service
   lifecycle:
     timeout-per-shutdown-phase: 20s
   datasource:
     hikari:
+      maximum-pool-size: 10
+      minimum-idle: 10
       connection-timeout: 2000
       validation-timeout: 1000
   flyway:

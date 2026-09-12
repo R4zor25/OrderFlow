@@ -1,10 +1,17 @@
 spring:
+  threads:
+    virtual:
+      enabled: true
+  main:
+    keep-alive: true
   lifecycle:
     timeout-per-shutdown-phase: 20s
   application:
     name: catalog-pricing-service
   datasource:
     hikari:
+      maximum-pool-size: 10
+      minimum-idle: 10
       connection-timeout: 2000
       validation-timeout: 1000
   data:
@@ -40,7 +47,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       probes:

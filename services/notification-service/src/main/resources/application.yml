@@ -33,6 +33,8 @@ kafka:
 
 datasources:
   default:
+    maximum-pool-size: 10
+    minimum-idle: 10
     connection-timeout: 2000
     validation-timeout: 1000
     driver-class-name: org.postgresql.Driver

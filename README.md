@@ -132,3 +132,24 @@ curl 'http://localhost:8082/actuator/metrics/orders.placed?tag=customerType:B2B'
 Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total`. The order endpoint also exposes the existing `outbox_lag_seconds` gauge, which queries the age of the oldest unpublished order event when sampled.
 
 Counters belong to one running application instance and reset on restart. A crash between database commit and the increment can miss a measurement; an instance can also stop between scrapes. Use them for operational rates and trends, not as a durable accounting ledger. With multiple instances, scrape each instance and aggregate rates across them. The current configuration exposes the endpoints without authentication; restrict management access in the deployment network.
+
+
+## Virtual threads and database concurrency
+
+The three Spring services enable virtual threads and `spring.main.keep-alive=true`. Tests verify actual HTTP request execution on virtual threads. The Micronaut service retains its existing threading model.
+
+All four services explicitly configure a fixed Hikari pool with maximum 10 and minimum idle 10 connections per application instance. Existing 2-second connection acquisition and 1-second validation timeouts remain unchanged. A virtual thread does not create a database connection: once all pool connections are busy, borrowers wait until a connection is returned or acquisition times out.
+
+The Spring services expose Hikari gauges through Actuator, for example:
+
+```bash
+curl http://localhost:8081/actuator/metrics/hikaricp.connections.active
+curl http://localhost:8081/actuator/metrics/hikaricp.connections.pending
+curl http://localhost:8081/actuator/metrics/hikaricp.connections.max
+```
+
+Ports 8082 and 8083 provide the same measurements for order and inventory. Catalog exposes metrics JSON; Prometheus remains enabled only for order and inventory. Notification does not expose these Actuator endpoints.
+
+Connection limits are per instance, not a global limit across the deployment. Budget the sum of all service replicas' pool maxima plus migration, monitoring and administrative connections against the database limit, allowing operational headroom.
+
+[`scripts/benchmark_quote.py`](scripts/benchmark_quote.py) compares the real quote endpoint using platform/virtual threads and pools of 5/50 under identical resource limits. The benchmark overrides are temporary; the application default remains 10. See [benchmark instructions](scripts/README.md#quote-throughput-and-pool-pressure). Local measurements describe this workload and machine; they do not establish a universally optimal pool size.

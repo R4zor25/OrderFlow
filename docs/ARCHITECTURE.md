@@ -350,8 +350,10 @@ Observability:
 
 Performance:
 
-- Virtual threads on (`spring.threads.virtual.enabled=true`); database concurrency remains limited by the Hikari pool size.
-- Hikari pool size: 10 per service.
+- Three Spring services enable virtual threads (`spring.threads.virtual.enabled=true`) and JVM keep-alive (`spring.main.keep-alive=true`). Real HTTP tests verify virtual request execution; catalog also tests the auto-configured application task executor. Micronaut retains its existing threading model.
+- Fixed Hikari pool: maximum 10, minimum idle 10 connections per service instance, including notification. Database concurrency remains bounded by the pool; existing connection acquisition/validation timeouts are 2s/1s.
+- Actuator exposes Hikari active/idle/pending/max/min gauges on the Spring services. Pool pressure is distinct from HTTP concurrency; pending borrowers wait for a connection, not necessarily for a PostgreSQL lock.
+- Size the total database connection budget across service replicas plus operational clients. Benchmark pool overrides of 5/50 do not change the application default or assert an optimal production size.
 
 ## 7. Repository layout
 
