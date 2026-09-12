@@ -7,6 +7,7 @@ import java.util.List;
 import com.orderflow.order.domain.Customer;
 import com.orderflow.order.domain.Order;
 import com.orderflow.order.infrastructure.OrderRepository;
+import com.orderflow.order.infrastructure.metrics.OrderBusinessMetrics;
 import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,10 +21,13 @@ public class PersistPlacedOrderService {
 
     private final OrderRepository orders;
     private final OrderOutboxWriter outbox;
+    private final OrderBusinessMetrics metrics;
 
-    public PersistPlacedOrderService(OrderRepository orders, OrderOutboxWriter outbox) {
+    public PersistPlacedOrderService(OrderRepository orders, OrderOutboxWriter outbox,
+                                     OrderBusinessMetrics metrics) {
         this.orders = orders;
         this.outbox = outbox;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -31,6 +35,7 @@ public class PersistPlacedOrderService {
                                     BigDecimal totalVat, Instant now) {
         Order order = orders.saveAndFlush(Order.place(customer, pricedLines, totalVat, now));
         outbox.placed(order, now);
+        metrics.placedAfterCommit(customer.getType());
         log.info("Order placed orderId={}", order.getId());
         return PlaceOrderResult.from(order);
     }

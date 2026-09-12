@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.orderflow.inventory.infrastructure.events.ProcessedEventRepository;
+import com.orderflow.inventory.infrastructure.metrics.InventoryBusinessMetrics;
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxWriter;
 import com.orderflow.inventory.reservation.application.ReservationService;
 import com.orderflow.inventory.reservation.domain.ReservationLine;
@@ -16,12 +17,15 @@ public class ReservationOutcomeService {
     private final ProcessedEventRepository processedEvents;
     private final ReservationService reservations;
     private final InventoryOutboxWriter outbox;
+    private final InventoryBusinessMetrics metrics;
 
     public ReservationOutcomeService(ProcessedEventRepository processedEvents,
-                                     ReservationService reservations, InventoryOutboxWriter outbox) {
+                                     ReservationService reservations, InventoryOutboxWriter outbox,
+                                     InventoryBusinessMetrics metrics) {
         this.processedEvents = processedEvents;
         this.reservations = reservations;
         this.outbox = outbox;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -39,5 +43,6 @@ public class ReservationOutcomeService {
             return;
         }
         outbox.failed(orderId, unavailableSku);
+        metrics.reservationFailedAfterCommit();
     }
 }

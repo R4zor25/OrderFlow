@@ -7,6 +7,7 @@ import com.orderflow.order.domain.Order;
 import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.domain.OrderStatus;
 import com.orderflow.order.infrastructure.OrderRepository;
+import com.orderflow.order.infrastructure.metrics.OrderBusinessMetrics;
 import com.orderflow.order.infrastructure.events.ProcessedEventRepository;
 import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import org.slf4j.Logger;
@@ -23,13 +24,15 @@ public class StockResultService {
     private final OrderRepository orders;
     private final OrderOutboxWriter outbox;
     private final Clock clock;
+    private final OrderBusinessMetrics metrics;
 
     public StockResultService(ProcessedEventRepository processedEvents, OrderRepository orders,
-                              OrderOutboxWriter outbox, Clock clock) {
+                              OrderOutboxWriter outbox, Clock clock, OrderBusinessMetrics metrics) {
         this.processedEvents = processedEvents;
         this.orders = orders;
         this.outbox = outbox;
         this.clock = clock;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -61,6 +64,7 @@ public class StockResultService {
         order.reject(reason, now);
         orders.flush();
         outbox.rejected(order, now);
+        metrics.rejectedAfterCommit(order.getCustomer().getType());
         log.info("Order rejected orderId={} eventId={}", orderId, eventId);
     }
 

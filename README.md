@@ -109,3 +109,26 @@ Missing or invalid trace context starts a fresh trace without rejecting a valid 
 Local profiles sample new root traces at 100%; base configurations use 10%, respecting the parent sampling decision. No external trace backend is required for log correlation. Spring has no span exporter dependency in this configuration; Micronaut exporters are set to `none`. A collector and trace visualization can be configured separately.
 
 Tracing integration tests verify real HTTP and Kafka boundaries, persistence through the outbox, one canonical outgoing `traceparent`, context restoration under an unrelated scheduled observation, missing/malformed context, and scope cleanup after failures.
+
+
+## Business metrics and Prometheus
+
+Order and inventory expose `/actuator/prometheus` on their existing HTTP ports (local: 8082 and 8083). The endpoint serves Prometheus text exposition; a Prometheus server is not included. `/actuator/metrics/{name}` remains available for individual Micrometer measurements.
+
+| Micrometer name | Labels | Increment condition |
+|---|---|---|
+| `orders.placed` | `customerType=B2B/B2C` | A new order and its `OrderPlaced` outbox record commit. |
+| `orders.rejected` | `customerType=B2B/B2C`, `reason=stock_reservation_failed` | A stock-result event commits an actual order rejection and its outbox record. |
+| `inventory.reservation.failed` | `reason=insufficient_stock` | A new failed reservation outcome commits its processed-event marker and outbox record. |
+
+These counters increment after successful database commit. Rolled-back operations, normal HTTP idempotency replays, duplicate event IDs, and ignored late failures for cancelled orders do not increment them. Counters are pre-registered with a finite set of labels; identifiers and free-form reasons are not labels. They measure different stages of the asynchronous workflow and need not change simultaneously or have identical totals.
+
+```bash
+curl http://localhost:8082/actuator/prometheus
+curl http://localhost:8083/actuator/prometheus
+curl 'http://localhost:8082/actuator/metrics/orders.placed?tag=customerType:B2B'
+```
+
+Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total`. The order endpoint also exposes the existing `outbox_lag_seconds` gauge, which queries the age of the oldest unpublished order event when sampled.
+
+Counters belong to one running application instance and reset on restart. A crash between database commit and the increment can miss a measurement; an instance can also stop between scrapes. Use them for operational rates and trends, not as a durable accounting ledger. With multiple instances, scrape each instance and aggregate rates across them. The current configuration exposes the endpoints without authentication; restrict management access in the deployment network.

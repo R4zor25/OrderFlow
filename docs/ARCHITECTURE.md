@@ -343,7 +343,9 @@ Observability:
 - Spring uses Micrometer Tracing with the OpenTelemetry bridge; observation is enabled on `KafkaTemplate` and listener containers. Micronaut uses its OpenTelemetry Kafka integration and a scoped consumer-processing span around the notification listener.
 - W3C `traceparent`/`tracestate` propagate through HTTP and Kafka. Outbox writers persist active propagation headers atomically; relays restore each event's context before observed publication, detached from scheduler context. Missing/invalid trace metadata starts a new trace.
 - Local root sampling is 100%, base root sampling 10%, with parent decisions respected. Log correlation works without a collector; this configuration does not export spans to an external backend.
-- Custom metrics: `orders.placed`, `orders.rejected`, `inventory.reservation.failed`, `outbox.lag.seconds` (gauge: age of oldest unpublished row).
+- Custom counters: `orders.placed` (new order persisted), `orders.rejected` (actual rejection from stock result), `inventory.reservation.failed` (new durable failed reservation outcome). Increment after successful database commit; rollback, duplicate event IDs, HTTP idempotency replay and ignored cancelled-order results do not increment them. Labels are bounded: `customerType=B2B/B2C` on order counters, fixed `reason` categories on rejection/failure counters. Never use IDs, SKUs or free-form reasons as labels.
+- Order and inventory expose `/actuator/prometheus`; no Prometheus server is provisioned. The existing order `outbox.lag.seconds` gauge reports the age of the oldest unpublished order event. Other services have not enabled Prometheus export yet.
+- Counters are per application process and reset on restart. Commit-to-increment crashes and missed scrapes can lose measurements; metrics show operational trends rather than durable accounting totals. Each instance must be scraped independently when scaling.
 - Optional: `grafana/otel-lgtm` container in Compose to show traces and metrics.
 
 Performance:
