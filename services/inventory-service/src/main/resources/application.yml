@@ -21,7 +21,10 @@ spring:
       properties:
         spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
         spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+    template:
+      observation-enabled: true
     listener:
+      observation-enabled: true
       ack-mode: record
     producer:
       key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
@@ -46,7 +49,18 @@ server:
   port: 8083
   shutdown: graceful
 
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  tracing:
+    sampling:
+      probability: 0.1
+    propagation:
+      consume: w3c
+      produce: w3c
   endpoints:
     web:
       exposure:

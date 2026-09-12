@@ -339,8 +339,10 @@ Configuration:
 Observability:
 
 - Actuator: `health` with `liveness` and `readiness` groups (readiness includes DB and Kafka), `info`, `metrics`, `prometheus`.
-- Structured JSON logs (`logging.structured.format.console=ecs`), traceId and spanId in every line.
-- Micrometer Tracing with OpenTelemetry bridge; observation enabled on `KafkaTemplate` and listener containers so one trace spans HTTP -> outbox -> Kafka -> consumer.
+- Structured JSON logs: Spring uses ECS (`logging.structured.format.console=ecs`), Micronaut uses Logback JSON. Active traced operations include trace/span IDs (Spring `traceId`/`spanId`, Micronaut `mdc.trace_id`/`mdc.span_id`); startup/background logs without an active span may omit them.
+- Spring uses Micrometer Tracing with the OpenTelemetry bridge; observation is enabled on `KafkaTemplate` and listener containers. Micronaut uses its OpenTelemetry Kafka integration and a scoped consumer-processing span around the notification listener.
+- W3C `traceparent`/`tracestate` propagate through HTTP and Kafka. Outbox writers persist active propagation headers atomically; relays restore each event's context before observed publication, detached from scheduler context. Missing/invalid trace metadata starts a new trace.
+- Local root sampling is 100%, base root sampling 10%, with parent decisions respected. Log correlation works without a collector; this configuration does not export spans to an external backend.
 - Custom metrics: `orders.placed`, `orders.rejected`, `inventory.reservation.failed`, `outbox.lag.seconds` (gauge: age of oldest unpublished row).
 - Optional: `grafana/otel-lgtm` container in Compose to show traces and metrics.
 

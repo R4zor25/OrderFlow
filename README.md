@@ -96,3 +96,16 @@ Kafka readiness checks broker metadata availability, not consumer partition assi
 Spring explicitly enables graceful HTTP shutdown with a 20-second timeout **per lifecycle phase**. Micronaut enables graceful shutdown with a 20-second grace period. Integration tests verify that an active HTTP request can finish while application shutdown waits. Total process shutdown may take longer than one grace period.
 
 For deployment, configure the load balancer to check readiness and coordinate target draining with application shutdown. The external container stop timeout must allow the measured total shutdown duration plus margin. ECS and ALB resources are not configured by this change. ALB health thresholds delay target state changes, and ALB may fail open when all targets are unhealthy.
+
+
+## Structured logs and trace propagation
+
+Spring services write ECS JSON to the console. The Micronaut notification service writes Logback JSON; its trace fields are in `mdc.trace_id` and `mdc.span_id`, while Spring uses top-level `traceId` and `spanId`. Trace IDs correlate a request across services; span IDs identify individual operations. Logs outside a current trace, such as startup messages, may omit these fields.
+
+The order pricing client forwards W3C `traceparent`/`tracestate` using the configured Spring `RestClient.Builder`. Order and inventory outbox writers persist the active trace context in `headers` in the same database transaction as the event. Each relay restores that context before the observed Kafka send, isolating it from the scheduler's context. Consumers continue the trace; the Micronaut listener explicitly scopes processing through notification persistence and delivery.
+
+Missing or invalid trace context starts a fresh trace without rejecting a valid business request/event. Trace metadata is diagnostic: it does not authorize requests, enforce idempotency, or change event payloads. New business logs contain IDs and counts, not emails or full request/event payloads.
+
+Local profiles sample new root traces at 100%; base configurations use 10%, respecting the parent sampling decision. No external trace backend is required for log correlation. Spring has no span exporter dependency in this configuration; Micronaut exporters are set to `none`. A collector and trace visualization can be configured separately.
+
+Tracing integration tests verify real HTTP and Kafka boundaries, persistence through the outbox, one canonical outgoing `traceparent`, context restoration under an unrelated scheduled observation, missing/malformed context, and scope cleanup after failures.

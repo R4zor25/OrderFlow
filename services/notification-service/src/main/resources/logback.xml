@@ -1,12 +1,16 @@
 <configuration>
-
+    <contextName>notification-service</contextName>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%thread]) %highlight(%-5level) %magenta(%logger{36}) - %msg%n</pattern>
+        <encoder class="ch.qos.logback.classic.encoder.JsonEncoder">
+            <withFormattedMessage>true</withFormattedMessage>
+            <withMessage>false</withMessage>
+            <withArguments>false</withArguments>
         </encoder>
     </appender>
-
-    <root level="info">
-        <appender-ref ref="STDOUT" />
+    <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.mdc.v1_0.OpenTelemetryAppender">
+        <appender-ref ref="STDOUT"/>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="OTEL"/>
     </root>
 </configuration>

@@ -6,6 +6,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import com.orderflow.order.application.OutboxRelay;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +25,12 @@ import static org.mockito.Mockito.when;
 @SpringBootTest
 @Import(PostgresTestConfiguration.class)
 class OutboxRelayFailureIntegrationTest {
+
+    @Autowired
+    private Tracer tracer;
+
+    @Autowired
+    private ObservationRegistry observations;
 
     @Autowired
     private OutboxRelay relay;
@@ -53,6 +61,8 @@ class OutboxRelayFailureIntegrationTest {
         assertThatThrownBy(relay::publishBatch)
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining(eventId.toString());
+        assertThat(tracer.currentSpan()).isNull();
+        assertThat(observations.getCurrentObservation()).isNull();
         assertThat(jdbc.queryForObject("""
             select published_at from orders.outbox_event where id = ?
             """, Timestamp.class, eventId)).isNull();

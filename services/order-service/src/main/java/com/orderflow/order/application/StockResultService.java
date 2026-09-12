@@ -9,11 +9,15 @@ import com.orderflow.order.domain.OrderStatus;
 import com.orderflow.order.infrastructure.OrderRepository;
 import com.orderflow.order.infrastructure.events.ProcessedEventRepository;
 import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class StockResultService {
+
+    private static final Logger log = LoggerFactory.getLogger(StockResultService.class);
 
     private final ProcessedEventRepository processedEvents;
     private final OrderRepository orders;
@@ -41,6 +45,7 @@ public class StockResultService {
         order.confirm(now);
         orders.flush();
         outbox.confirmed(order, now);
+        log.info("Order confirmed orderId={} eventId={}", orderId, eventId);
     }
 
     @Transactional
@@ -56,6 +61,7 @@ public class StockResultService {
         order.reject(reason, now);
         orders.flush();
         outbox.rejected(order, now);
+        log.info("Order rejected orderId={} eventId={}", orderId, eventId);
     }
 
     private Order findOrder(UUID orderId) {

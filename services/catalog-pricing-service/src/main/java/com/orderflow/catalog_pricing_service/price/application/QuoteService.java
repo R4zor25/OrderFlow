@@ -9,6 +9,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +22,8 @@ import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepos
 
 @Service
 public class QuoteService {
+
+    private static final Logger log = LoggerFactory.getLogger(QuoteService.class);
 
     private final ProductRepository productRepository;
     private final PriceTierCache priceTierCache;
@@ -71,6 +75,7 @@ public class QuoteService {
             totalGross = totalGross.add(calculation.totalGross());
         }
 
+        log.info("Quote calculated for customerGroup={}, lineCount={}", input.customerGroup(), lines.size());
         return new QuoteResult(input.customerGroup(), List.copyOf(lines),
             totalNet, totalVat, totalGross, clock.instant());
     }

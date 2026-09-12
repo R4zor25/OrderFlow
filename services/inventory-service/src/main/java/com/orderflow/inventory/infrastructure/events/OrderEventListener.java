@@ -6,12 +6,16 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
 @ConditionalOnProperty(prefix = "inventory.messaging", name = "enabled", havingValue = "true")
 public class OrderEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderEventListener.class);
 
     private final ObjectMapper json;
     private final OrderPlacedProcessor placed;
@@ -35,12 +39,14 @@ public class OrderEventListener {
                 EventEnvelope<OrderPlacedPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
                 validateKey(record, event);
+                log.info("Processing OrderPlaced eventId={} orderId={}", event.eventId(), event.aggregateId());
                 placed.process(event);
             }
             case "OrderCancelled" -> {
                 EventEnvelope<OrderCancelledPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
                 validateKey(record, event);
+                log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), event.aggregateId());
                 cancelled.process(event);
             }
             case "OrderConfirmed", "OrderRejected" -> { }

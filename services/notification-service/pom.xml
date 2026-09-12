@@ -34,6 +34,15 @@
 
   <dependencies>
     <dependency>
+      <groupId>io.micronaut.tracing</groupId>
+      <artifactId>micronaut-tracing-opentelemetry-kafka</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry.instrumentation</groupId>
+      <artifactId>opentelemetry-logback-mdc-1.0</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>io.micronaut.email</groupId>
       <artifactId>micronaut-email-javamail</artifactId>
     </dependency>

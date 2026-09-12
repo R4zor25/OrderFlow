@@ -1,6 +1,7 @@
 package com.orderflow.notification.messaging;
 
 import io.micronaut.json.JsonMapper;
+import io.opentelemetry.api.OpenTelemetry;
 import io.micronaut.configuration.kafka.exceptions.KafkaListenerException;
 import io.micronaut.configuration.kafka.annotation.KafkaListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -18,7 +19,7 @@ class NotificationEventListenerTest {
 
     private final RecordingPublisher publisher = new RecordingPublisher();
     private final NotificationEventListener listener =
-            new NotificationEventListener(new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null);
+            new NotificationEventListener(new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null, OpenTelemetry.noop());
 
     @Test
     void ignoresUnknownEventWithoutDeadLettering() throws Exception {

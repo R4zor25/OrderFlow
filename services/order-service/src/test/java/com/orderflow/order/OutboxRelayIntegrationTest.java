@@ -63,6 +63,8 @@ class OutboxRelayIntegrationTest {
             new BigDecimal("169.80"), new BigDecimal("45.85"), new BigDecimal("215.65"),
             Instant.parse("2026-10-01T10:15:30Z")));
         var response = mvc.perform(post("/api/v1/orders")
+                .header("traceparent", "00-11111111111111111111111111111111-2222222222222222-01")
+                .header("tracestate", "vendor=value")
                 .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -78,6 +80,13 @@ class OutboxRelayIntegrationTest {
         String payload = jdbc.queryForObject("""
             select payload::text from orders.outbox_event where id = ?
             """, String.class, eventId);
+
+        String headers = jdbc.queryForObject("select headers::text from orders.outbox_event where id = ?",
+            String.class, eventId);
+        assertThat(headers).isNotNull();
+        assertThat(json.readTree(headers).path("traceparent").asString())
+            .startsWith("00-11111111111111111111111111111111-");
+        assertThat(json.readTree(headers).path("tracestate").asString()).isEqualTo("vendor=value");
 
         try (var consumer = new KafkaConsumer<String, String>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
@@ -98,6 +107,11 @@ class OutboxRelayIntegrationTest {
             }
 
             assertThat(found).isNotNull();
+            assertThat(found.headers().headers("traceparent")).hasSize(1);
+            String propagated = new String(found.headers().lastHeader("traceparent").value(),
+                java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(propagated).startsWith("00-11111111111111111111111111111111-")
+                .isNotEqualTo(json.readTree(headers).path("traceparent").asString());
             assertThat(found.key()).isEqualTo(orderId.toString());
             assertThat(json.readTree(found.value())).isEqualTo(json.readTree(payload));
             assertThat(found.headers().lastHeader("eventType").value())

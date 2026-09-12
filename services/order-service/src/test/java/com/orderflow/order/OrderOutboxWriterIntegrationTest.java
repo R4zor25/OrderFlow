@@ -94,6 +94,18 @@ class OrderOutboxWriterIntegrationTest {
     }
 
     @Test
+    void writesEmptyPropagationHeadersWhenNoSpanIsActive() {
+        UUID id = createOrder();
+        transactions.executeWithoutResult(status -> {
+            Order order = orders.findAllWithCustomerAndLines(List.of(id)).getFirst();
+            outbox.placed(order, CREATED);
+        });
+        String headers = jdbc.queryForObject(
+            "select headers::text from orders.outbox_event where aggregate_id = ?", String.class, id);
+        assertThat(json.readTree(headers).isEmpty()).isTrue();
+    }
+
+    @Test
     void refusesOutboxWriteOutsideBusinessTransaction() {
         UUID id = createOrder();
         var message = new EventEnvelope<>(UUID.randomUUID(), "OrderPlaced", 1, CREATED,

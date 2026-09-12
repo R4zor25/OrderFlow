@@ -9,6 +9,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.orderflow.order.config.OutboxRelayProperties;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,14 +32,22 @@ public class OutboxRelay {
     private final OutboxRelayProperties properties;
     private final ObjectMapper json;
     private final Clock clock;
+    private final Tracer tracer;
+    private final Propagator propagator;
+    private final ObservationRegistry observations;
+    private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
     public OutboxRelay(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka,
-                       OutboxRelayProperties properties, ObjectMapper json, Clock clock) {
+                       OutboxRelayProperties properties, ObjectMapper json, Clock clock,
+                       Tracer tracer, Propagator propagator, ObservationRegistry observations) {
         this.jdbc = jdbc;
         this.kafka = kafka;
         this.properties = properties;
         this.json = json;
         this.clock = clock;
+        this.tracer = tracer;
+        this.propagator = propagator;
+        this.observations = observations;
     }
 
     @Transactional
@@ -64,21 +77,7 @@ public class OutboxRelay {
         for (var event : events) {
             var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId().toString(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
-            if (event.headers() != null) {
-                var traceparent = json.readTree(event.headers()).path("traceparent").asString(null);
-                if (traceparent != null) {
-                    record.headers().add(new RecordHeader("traceparent", traceparent.getBytes(StandardCharsets.UTF_8)));
-                }
-            }
-
-            try {
-                kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while publishing outbox event " + event.id(), exception);
-            } catch (ExecutionException | TimeoutException exception) {
-                throw new IllegalStateException("Could not publish outbox event " + event.id(), exception);
-            }
+            publish(event, record);
 
             int updated = jdbc.update("""
                 update orders.outbox_event set published_at = ?
@@ -89,6 +88,33 @@ public class OutboxRelay {
             }
         }
         return events.size();
+    }
+
+    private void publish(PendingEvent event, ProducerRecord<String, String> record) {
+        var previousScope = observations.getCurrentObservationScope();
+        // The scheduled observation must not become the parent of a saved business trace.
+        observations.setCurrentObservationScope(null);
+        try (var detached = tracer.withSpan(null)) {
+            var headers = event.headers() == null ? json.createObjectNode() : json.readTree(event.headers());
+            var span = propagator.extract(headers, (carrier, key) -> carrier.path(key).asString(null))
+                .name("outbox.publish").start();
+            try (var scope = tracer.withSpan(span)) {
+                kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                log.info("Published outbox event eventId={} orderId={} eventType={}",
+                    event.id(), event.aggregateId(), event.eventType());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                span.error(exception);
+                throw new IllegalStateException("Interrupted while publishing outbox event " + event.id(), exception);
+            } catch (ExecutionException | TimeoutException exception) {
+                span.error(exception);
+                throw new IllegalStateException("Could not publish outbox event " + event.id(), exception);
+            } finally {
+                span.end();
+            }
+        } finally {
+            observations.setCurrentObservationScope(previousScope);
+        }
     }
 
     private record PendingEvent(UUID id, UUID aggregateId, String eventType, String payload, String headers) {

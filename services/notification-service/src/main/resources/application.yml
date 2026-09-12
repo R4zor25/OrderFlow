@@ -57,3 +57,19 @@ endpoints:
     enabled: true
     sensitive: false
     details-visible: NEVER
+
+otel:
+  service:
+    name: ${micronaut.application.name}
+  propagators: tracecontext
+  traces:
+    exporter: none
+    sampler: parentbased_traceidratio
+    sampler.arg: 0.1
+  metrics:
+    exporter: none
+  logs:
+    exporter: none
+  instrumentation:
+    kafka:
+      captured-headers: []

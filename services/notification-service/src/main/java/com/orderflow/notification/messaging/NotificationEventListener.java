@@ -8,6 +8,14 @@ import io.micronaut.configuration.kafka.annotation.OffsetStrategy;
 import io.micronaut.configuration.kafka.annotation.Topic;
 import io.micronaut.context.annotation.Requires;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.propagation.TextMapGetter;
+
+import java.nio.charset.StandardCharsets;
+import java.util.stream.StreamSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,17 +30,56 @@ public final class NotificationEventListener {
     private final NotificationEventDecoder decoder;
     private final NotificationDeadLetterPublisher deadLetterPublisher;
     private final NotificationProcessor processor;
+    private final OpenTelemetry openTelemetry;
+
+    private static final TextMapGetter<ConsumerRecord<String, String>> HEADERS = new TextMapGetter<>() {
+        @Override
+        public Iterable<String> keys(ConsumerRecord<String, String> record) {
+            return StreamSupport.stream(record.headers().spliterator(), false)
+                    .map(header -> header.key()).toList();
+        }
+
+        @Override
+        public String get(ConsumerRecord<String, String> record, String key) {
+            var header = record.headers().lastHeader(key);
+            return header == null || header.value() == null ? null
+                    : new String(header.value(), StandardCharsets.UTF_8);
+        }
+    };
 
     public NotificationEventListener(NotificationEventDecoder decoder,
                                      NotificationDeadLetterPublisher deadLetterPublisher,
-                                     NotificationProcessor processor) {
+                                     NotificationProcessor processor, OpenTelemetry openTelemetry) {
         this.decoder = decoder;
         this.deadLetterPublisher = deadLetterPublisher;
         this.processor = processor;
+        this.openTelemetry = openTelemetry;
     }
 
     @Topic({NotificationEventDecoder.ORDER_TOPIC, NotificationEventDecoder.STOCK_TOPIC})
     public void onEvent(ConsumerRecord<String, String> record) {
+        var parent = openTelemetry.getPropagators().getTextMapPropagator()
+                .extract(Context.root(), record, HEADERS);
+        var span = openTelemetry.getTracer("com.orderflow.notification")
+                .spanBuilder(record.topic() + " process")
+                .setParent(parent)
+                .setSpanKind(SpanKind.CONSUMER)
+                .setAttribute("messaging.system", "kafka")
+                .setAttribute("messaging.destination.name", record.topic())
+                .setAttribute("messaging.consumer.group.name", "notification-service")
+                .startSpan();
+        // Micronaut's Kafka poll instrumentation ends before the listener runs.
+        try (var scope = span.makeCurrent()) {
+            processRecord(record);
+        } catch (RuntimeException failure) {
+            span.setStatus(StatusCode.ERROR);
+            throw failure;
+        } finally {
+            span.end();
+        }
+    }
+
+    private void processRecord(ConsumerRecord<String, String> record) {
         try {
             var decoded = decoder.decode(record.topic(), record.key(), record.value());
             if (decoded.isEmpty()) {

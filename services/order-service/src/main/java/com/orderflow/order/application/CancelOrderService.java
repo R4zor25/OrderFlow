@@ -7,11 +7,15 @@ import java.util.UUID;
 import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.infrastructure.OrderRepository;
 import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class CancelOrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(CancelOrderService.class);
 
     private final OrderRepository orders;
     private final OrderOutboxWriter outbox;
@@ -35,6 +39,7 @@ public class CancelOrderService {
         order.cancel(now);
         orders.flush();
         outbox.cancelled(order, previousStatus, now);
+        log.info("Order cancelled orderId={}", id);
         return OrderDetails.from(order);
     }
 }

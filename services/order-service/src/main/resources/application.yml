@@ -32,7 +32,10 @@ spring:
       properties:
         spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
         spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+    template:
+      observation-enabled: true
     listener:
+      observation-enabled: true
       ack-mode: record
     producer:
       key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
@@ -76,7 +79,15 @@ order:
       open-wait: 10s
       half-open-permitted-calls: 2
 
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  tracing:
+    propagation:
+      type: w3c
   endpoint:
     health:
       show-details: never

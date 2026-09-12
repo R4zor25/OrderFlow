@@ -9,12 +9,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.orderflow.inventory.config.InventoryOutboxRelayProperties;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -27,15 +31,22 @@ public class InventoryOutboxRelay {
     private final InventoryOutboxRelayProperties properties;
     private final ObjectMapper json;
     private final Clock clock;
+    private final Tracer tracer;
+    private final Propagator propagator;
+    private final ObservationRegistry observations;
 
     public InventoryOutboxRelay(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka,
                                 InventoryOutboxRelayProperties properties,
-                                ObjectMapper json, Clock clock) {
+                                ObjectMapper json, Clock clock, Tracer tracer,
+                                Propagator propagator, ObservationRegistry observations) {
         this.jdbc = jdbc;
         this.kafka = kafka;
         this.properties = properties;
         this.json = json;
         this.clock = clock;
+        this.tracer = tracer;
+        this.propagator = propagator;
+        this.observations = observations;
     }
 
     @Transactional
@@ -65,20 +76,27 @@ public class InventoryOutboxRelay {
         for (var event : events) {
             var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
-            if (event.headers() != null) {
-                var traceparent = json.readTree(event.headers()).path("traceparent").asString(null);
-                if (traceparent != null) {
-                    record.headers().add(new RecordHeader("traceparent", traceparent.getBytes(StandardCharsets.UTF_8)));
+            var previousObservationScope = observations.getCurrentObservationScope();
+            // The saved event context takes precedence over the scheduled relay observation.
+            observations.setCurrentObservationScope(null);
+            try (var detached = tracer.withSpan(null)) {
+                JsonNode headers = event.headers() == null ? null : json.readTree(event.headers());
+                var span = propagator.extract(headers, (carrier, key) -> {
+                    var value = carrier == null ? null : carrier.get(key);
+                    return value != null && value.isString() ? value.asString() : null;
+                }).name("inventory.outbox.publish").start();
+                try (var scope = tracer.withSpan(span)) {
+                    kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                } finally {
+                    span.end();
                 }
-            }
-
-            try {
-                kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Interrupted while publishing outbox event " + event.id(), exception);
             } catch (ExecutionException | TimeoutException exception) {
                 throw new IllegalStateException("Could not publish outbox event " + event.id(), exception);
+            } finally {
+                observations.setCurrentObservationScope(previousObservationScope);
             }
 
             int updated = jdbc.update("""

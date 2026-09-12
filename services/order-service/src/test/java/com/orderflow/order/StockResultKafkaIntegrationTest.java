@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.micrometer.tracing.Tracer;
 import com.orderflow.order.application.CancelOrderService;
 import com.orderflow.order.domain.Order;
 import com.orderflow.order.domain.OrderStatus;
@@ -37,6 +38,9 @@ class StockResultKafkaIntegrationTest {
 
     private static final String TOPIC = "inventory.stock-events.v1";
     private static final UUID CUSTOMER_ID = UUID.fromString("33333333-3333-4333-8333-333333333333");
+
+    @Autowired
+    private Tracer tracer;
 
     @Autowired
     private KafkaTemplate<String, String> kafka;
@@ -70,12 +74,19 @@ class StockResultKafkaIntegrationTest {
             orderId.toString(), new StockReservedPayload(orderId,
                 List.of(new StockReservedPayload.Line("CHAIR-001", 1))));
 
-        send(orderId.toString(), json.writeValueAsString(event));
+        var span = tracer.nextSpan().name("test.stock-result").start();
+        String traceId = span.context().traceId();
+        try (var scope = tracer.withSpan(span)) {
+            send(orderId.toString(), json.writeValueAsString(event));
+        } finally {
+            span.end();
+        }
 
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(orders.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(processedCount(eventId)).isEqualTo(1);
             assertThat(outboxCount(orderId, "OrderConfirmed")).isEqualTo(1);
+            assertResultTrace(orderId, "OrderConfirmed", traceId);
         });
     }
 
@@ -87,7 +98,13 @@ class StockResultKafkaIntegrationTest {
             orderId.toString(), new StockReservationFailedPayload(orderId,
                 "Insufficient stock", List.of("CHAIR-001")));
 
-        send(orderId.toString(), json.writeValueAsString(event));
+        var span = tracer.nextSpan().name("test.stock-result").start();
+        String traceId = span.context().traceId();
+        try (var scope = tracer.withSpan(span)) {
+            send(orderId.toString(), json.writeValueAsString(event));
+        } finally {
+            span.end();
+        }
 
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             var order = orders.findById(orderId).orElseThrow();
@@ -95,6 +112,7 @@ class StockResultKafkaIntegrationTest {
             assertThat(order.getRejectionReason()).isEqualTo("Insufficient stock");
             assertThat(processedCount(eventId)).isEqualTo(1);
             assertThat(outboxCount(orderId, "OrderRejected")).isEqualTo(1);
+            assertResultTrace(orderId, "OrderRejected", traceId);
         });
     }
 
@@ -132,6 +150,13 @@ class StockResultKafkaIntegrationTest {
             assertThat(orders.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(processedCount(validEventId)).isEqualTo(1);
         });
+    }
+
+    private void assertResultTrace(UUID orderId, String type, String traceId) {
+        String headers = jdbc.queryForObject(
+            "select headers::text from orders.outbox_event where aggregate_id = ? and event_type = ?",
+            String.class, orderId, type);
+        assertThat(json.readTree(headers).path("traceparent").asString()).startsWith("00-" + traceId + "-");
     }
 
     private void send(String key, String value) throws Exception {

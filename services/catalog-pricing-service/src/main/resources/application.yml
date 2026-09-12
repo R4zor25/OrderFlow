@@ -27,7 +27,16 @@ server:
   port: 8081
   shutdown: graceful
 
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  tracing:
+    propagation:
+      consume: w3c
+      produce: w3c
   endpoints:
     web:
       exposure:
