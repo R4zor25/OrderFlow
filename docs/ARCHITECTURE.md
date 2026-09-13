@@ -378,6 +378,13 @@ Continuous integration:
 - Maven's optional `coverage` profile creates JaCoCo XML/HTML reports. Available test/coverage reports are uploaded after success or failure. A stable `CI result` job distinguishes valid empty selections from failed or skipped selected jobs.
 - The workflow does not deploy or enable branch protection. Hosted operation requires a GitHub repository; local checks and outstanding hosted validation are documented in [CI.md](CI.md).
 
+AWS infrastructure foundation:
+
+- `infra/terraform` defines four immutable ECR repositories with scan on push and a five-image lifecycle policy, using the existing default VPC and default subnets in at least two availability zones.
+- A non-public Single-AZ PostgreSQL 17 RDS instance uses encrypted 20 GiB gp3 storage. Its security group accepts TCP 5432 only from the separate task security group. Application ingress is configured with the later ECS/ALB resources.
+- The generated demo database password is stored in SSM SecureString and in the excluded local Terraform state. Outputs expose its parameter ARN, not its value. The shared demo user and disposable database settings are not production isolation or backup policies.
+- Native Terraform tests use a mock AWS provider and assert the configuration contracts without creating cloud resources. Actual regional availability, permissions and connectivity require a live plan/apply; ECS/ALB/OIDC remain subsequent work.
+
 ## 7. Repository layout
 
 ```

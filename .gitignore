@@ -19,6 +19,10 @@
 *.tfvars
 *.tfvars.json
 **/.terraform/
+*.tfplan
+*.tfplan.*
+crash.log
+crash.*.log
 
 # Python tooling cache
 **/__pycache__/

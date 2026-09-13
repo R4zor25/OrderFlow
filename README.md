@@ -265,3 +265,10 @@ required status. See [CI policy and local verification](docs/CI.md).
 
 The workflow is prepared locally; hosted execution and branch protection still
 need verification after this repository is connected to GitHub.
+
+## AWS infrastructure foundation
+
+The [Terraform module](infra/terraform/README.md) defines ECR repositories,
+network access and a private PostgreSQL database for the temporary demo.
+Configuration and mock-provider tests run locally without AWS credentials.
+A real AWS plan/apply and the later ECS/ALB/OIDC deployment are still required.
