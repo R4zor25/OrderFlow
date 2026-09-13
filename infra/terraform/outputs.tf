@@ -62,3 +62,11 @@ output "image_tag" {
   description = "Application image SHA selected for Terraform task definitions."
   value       = var.image_tag
 }
+output "github_deploy_role_arn" {
+  description = "Short-lived GitHub OIDC deployment role."
+  value       = aws_iam_role.github_deploy.arn
+}
+output "aws_account_id" {
+  description = "Expected deployment account for GitHub repository variables."
+  value       = data.aws_caller_identity.current.account_id
+}

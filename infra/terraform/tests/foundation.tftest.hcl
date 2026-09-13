@@ -30,7 +30,12 @@ override_resource {
   target = aws_security_group.database
   values = { id = "sg-bbbbbbbbbbbbbbbbb" }
 }
-variables { image_tag = "66dbedbd4866e4e2ba794c10895d27e811511d72" }
+variables {
+  image_tag            = "66dbedbd4866e4e2ba794c10895d27e811511d72"
+  github_repository    = "test-org/orderflow"
+  github_owner_id      = "100"
+  github_repository_id = "200"
+}
 run "foundation_contract" {
   command = apply
   assert {

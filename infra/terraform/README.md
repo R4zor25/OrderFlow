@@ -196,3 +196,7 @@ Deleting local state is not teardown.
 - [Task execution role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html)
 - [SSM secret injection](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-ssm-paramstore.html)
 - [Deployment circuit breaker](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html)
+
+## GitHub release identity
+
+Supply required `github_repository`, `github_owner_id` and `github_repository_id` inputs from real GitHub metadata. The OIDC trust requires the exact immutable repository identity on main. Personal tfvars stay excluded. Existing GitHub providers must be imported with compatible state ownership. `github_deploy_role_arn` and `aws_account_id` provide the workflow variables. See [deployment setup and first activation](../../docs/DEPLOYMENT.md); publish images before enabling runtime, and preserve `runtime_enabled=true` thereafter.

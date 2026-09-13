@@ -265,3 +265,13 @@ Without `PATHS_FILTER_ACTION`, the suite reports skipped tests rather than claim
 it verified the filters. The CI detector checks out the pinned action and runs this
 suite before service selection. These tests require only Git, Node and Python;
 no Docker containers or normal application data are accessed.
+
+## ECS release helper
+
+`deploy.py` uses Python standard library, AWS CLI v2 and Docker buildx. The GitHub workflow provides the five target variables and short-lived credentials; it builds images, while the helper validates targets/images and manages checked application revision changes. CLI operations: `validate`, `image-status`, `verify-images`, `deploy`, `rollback`. See [DEPLOYMENT.md](../docs/DEPLOYMENT.md) for the manual release and bootstrap sequence.
+
+```bash
+python3 -m unittest discover -s scripts/tests_deploy -v
+```
+
+Behavior tests fake external CLI responses without cloud access; workflow contract tests use Ruby's standard-library YAML parser. They do not establish live OIDC/IAM success.

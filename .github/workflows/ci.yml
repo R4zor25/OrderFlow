@@ -42,6 +42,7 @@ jobs:
           PATHS_FILTER_ACTION: ${{ github.workspace }}/.ci-tools/paths-filter/dist/index.js
         run: |
           python3 -m unittest discover -s scripts/tests_ci -v
+          python3 -m unittest discover -s scripts/tests_deploy -v
           python3 -m unittest discover -s scripts/tests -v
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter

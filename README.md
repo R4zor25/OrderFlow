@@ -273,4 +273,8 @@ private RDS/SSM, six ARM64 ECS Fargate services, Service Connect and an HTTP ALB
 Runtime is disabled by default until discovery endpoints and SHA-tagged images
 exist. Local mock-provider tests and the notification AWS-profile integration
 check do not prove an AWS deployment. Live plan/apply, image publication and cloud
-traffic remain unverified; GitHub OIDC/deployment automation is still pending.
+traffic remain unverified; GitHub OIDC/deployment automation is implemented and locally checked.
+
+## Manual ECS release
+
+[Deployment runbook](docs/DEPLOYMENT.md): GitHub OIDC, ARM64 immutable image publication, verified ECS revisions and per-service rollback. Local checks pass; hosted/cloud operation awaits repository and AWS setup. First publish images, then activate Terraform; later workflow runs preserve desired counts.

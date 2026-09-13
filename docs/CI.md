@@ -92,3 +92,7 @@ publishing it, verify one inventory-only PR, one shared-contract/configuration P
 and one documentation-only PR; confirm the matrix, artifacts and final check.
 Then enable branch protection. The full Compose smoke/oversell tests remain
 separately runnable; this workflow's service jobs run Maven tests and image builds.
+
+## Manual release workflow
+
+`deploy.yml` is a separate manual workflow. Publish/deploy reverify all four services; rollback skips those builds but retains target/helper checks. Only its release job requests an OIDC token. The existing CI also executes `scripts/tests_deploy` regression tests. Setup, bootstrap ownership and explicit rollback inputs are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Hosted runs remain pending.

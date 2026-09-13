@@ -39,3 +39,31 @@ variable "runtime_enabled" {
   type        = bool
   default     = false
 }
+
+variable "github_repository" {
+  description = "Exact GitHub owner/repository whose main branch may deploy."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "GitHub repository must be owner/repository without whitespace or wildcards."
+  }
+}
+variable "github_owner_id" {
+  description = "Positive numeric GitHub owner ID for the immutable OIDC subject."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.github_owner_id))
+    error_message = "GitHub owner ID must be a positive numeric string."
+  }
+}
+variable "github_repository_id" {
+  description = "Positive numeric GitHub repository ID for the immutable OIDC subject."
+  type        = string
+  nullable    = false
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.github_repository_id))
+    error_message = "GitHub repository ID must be a positive numeric string."
+  }
+}
