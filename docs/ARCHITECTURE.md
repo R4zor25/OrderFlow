@@ -361,7 +361,14 @@ Container packaging:
 - Spring Boot JARs are extracted into dependency, loader, snapshot and application layers. Micronaut uses its existing executable JAR. Maven artifacts are stored in a BuildKit cache mount, outside the final image.
 - Runtime UID/GID is 10001. Java runs directly as PID 1 with `-XX:MaxRAMPercentage=75`; deployment must set a memory limit and budget native memory separately. Configuration and credentials are supplied at runtime.
 - Native Apple Silicon builds produce Linux ARM64 images, matching the intended ARM64 Fargate deployment. Other target architectures require an explicit build and verification.
-- `scripts/tests_docker/test_images.py` builds and starts all images with disposable real dependencies and checks health, runtime identity, heap sizing and SIGTERM shutdown. Full application Compose orchestration is the next step.
+- `scripts/tests_docker/test_images.py` builds and starts all images with disposable real dependencies and checks health, runtime identity, heap sizing and SIGTERM shutdown. The full application stack is orchestrated by `infra/docker-compose.yaml`.
+
+Local Compose orchestration:
+
+- Four application builds use service-local contexts. Existing local profiles/environments are overridden with internal DNS addresses for PostgreSQL, Redis, Kafka, the pricing API and Mailpit SMTP. No database credentials are included in images; Compose explicitly maps the password from the untracked environment file into each application's runtime environment.
+- Each application has a 512 MiB memory limit, one CPU quota and a 30-second stop grace period. These are local development limits, not production sizing. Runtime images include `curl` for HTTP readiness probes, while Java continues to run directly as non-root PID 1.
+- Startup waits for healthy required dependencies. Order additionally waits for catalog readiness; notification waits for Mailpit readiness. This expresses startup order, not automatic recovery after a running dependency fails. Kafka readiness checks metadata availability, not completion of the order workflow.
+- `scripts/tests_compose/test_stack.py` verifies the stack using current tracked working files, fresh isolated volumes and ephemeral host ports. It checks all application readiness endpoints and one real order through stock reservation, confirmation and SMTP capture. Broader smoke and oversell scenarios are separate follow-up work.
 
 ## 7. Repository layout
 

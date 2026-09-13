@@ -20,13 +20,36 @@ The root POM builds all four services. To build one independently, run `./mvnw v
 
 ## Run locally
 
-If `infra/.env` does not exist yet, copy `infra/.env.example` to `infra/.env` and replace the placeholder with your own local password. Keep an existing working `.env` unchanged. Compose reads `.env`, not `.env.example`; the example is only a committed template. The real `.env` is ignored by Git. Start the infrastructure:
+If `infra/.env` does not exist yet, copy `infra/.env.example` to `infra/.env` and replace the placeholder with your own local password. Keep an existing working `.env` unchanged. The example is only a committed template; the real `.env` is ignored by Git. The password must match the database already stored in an existing PostgreSQL volume: changing the file does not change that database user's password.
+
+Start the complete system from the repository root with Docker Desktop running:
 
 ```bash
-docker compose -f infra/docker-compose.yaml up -d --wait
+docker compose --env-file infra/.env -f infra/docker-compose.yaml up --build -d --wait
+docker compose --env-file infra/.env -f infra/docker-compose.yaml ps
 ```
 
-The Java processes run on the Mac, outside Compose. Pass the same `POSTGRES_PASSWORD` value to their environments (for example, in IntelliJ run configurations), select the `local` profile, and start the service you need. In a terminal, keep this command running:
+Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI and Mailpit. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. Each application has 512 MiB memory, one CPU and a 30-second stop grace period. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
+
+| Endpoint on the Mac | Address |
+|---|---|
+| Catalog / order / inventory / notification | `localhost:8081` / `:8082` / `:8083` / `:8084` |
+| Kafka UI | `http://localhost:8085` |
+| Mailpit inbox | `http://localhost:8025` |
+| PostgreSQL / Redis / Kafka host listener | `localhost:5433` / `:6379` / `:9094` |
+
+All published ports bind to loopback. Inside Compose, applications connect to `postgres:5432`, `redis:6379`, `kafka:9092`, `catalog-pricing-service:8081` and `mailpit:1025` instead of host addresses.
+
+### Run applications in IntelliJ instead
+
+To use Java processes on the Mac, stop any Compose application containers first to free their ports, then start only the dependencies:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yaml stop catalog-pricing-service order-service inventory-service notification-service
+docker compose --env-file infra/.env -f infra/docker-compose.yaml up -d --wait postgres redis kafka kafka-ui mailpit
+```
+
+Pass the same `POSTGRES_PASSWORD` value to the IntelliJ run configurations and select the Spring `local` profile or Micronaut `local` environment. Compose does not supply variables to Java processes on the Mac. For example, with that variable already set in your terminal:
 
 ```bash
 cd services/catalog-pricing-service
@@ -50,7 +73,7 @@ curl -i -X PUT http://localhost:8081/api/v1/products/CHAIR-001/prices \
   -d '{"customerGroup":"B2B_GOLD","tiers":[{"minQty":1,"unitPriceNet":84.90,"validFrom":"2020-01-01"}]}'
 ```
 
-The expected health status is `UP`. The local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
+The expected health status is `UP`. For a Java process on the Mac, the local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. In Compose, runtime environment variables override this with `postgres:5432`. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
 
 On startup, Flyway applies `V1__catalog.sql` and `V2__seed.sql` once. The `catalog` schema then contains 20 sample products, three customer groups and 12 B2B price tiers. Applied versions are recorded in `catalog.flyway_schema_history`.
 
@@ -66,7 +89,7 @@ The PUT example above changes the local seed price for `CHAIR-001`. `PUT /api/v1
 
 The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. `POST /api/v1/orders` accepts an `Idempotency-Key` header and creates a priced `PENDING` order with HTTP 202. `GET /api/v1/orders/{id}` and `GET /api/v1/orders` provide reads; `POST /api/v1/orders/{id}/cancel` cancels an eligible order. Inventory result events confirm or reject pending orders, and cancellation events release reservations.
 
-With Compose running and `POSTGRES_PASSWORD` set to the value in `infra/.env`, start it separately:
+The full Compose command already starts this service. For the IntelliJ/host workflow described above, with dependency containers running and `POSTGRES_PASSWORD` set to the value in `infra/.env`, start it separately:
 
 ```bash
 cd services/order-service
@@ -191,5 +214,22 @@ python3 -m unittest discover -s scripts/tests_docker -v
 The verifier checks readiness/liveness, the runtime user, Java PID 1, absence of
 build tools, container-aware heap sizing and SIGTERM shutdown. It removes its own
 containers, network and image tags; raw evidence remains under ignored
-`target/image-verification/`. The infrastructure Compose file currently starts
-only dependencies; application orchestration is the next integration step.
+`target/image-verification/`.
+
+To verify the complete Compose stack and one order-to-email workflow:
+
+```bash
+python3 -m unittest discover -s scripts/tests_compose -v
+```
+
+This test copies the current Git-tracked working files to a temporary directory,
+uses fresh volumes and ephemeral loopback ports, and removes its own resources.
+It requires Compose 2.24.4+ for the port override and does not read `infra/.env`.
+Raw evidence is retained under ignored `target/compose-verification/`.
+See [verification details](scripts/README.md#full-compose-verification).
+
+To stop the normal stack while preserving its named volumes:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yaml down
+```

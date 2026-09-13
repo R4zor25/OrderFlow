@@ -137,3 +137,38 @@ artifacts; later builds reuse BuildKit's cache.
 Evidence is retained under ignored `target/image-verification/<project>/`.
 Owned containers, dependency volumes/network and verification image tags are
 removed after the suite. Existing local infrastructure and BuildKit caches remain.
+
+
+## Full Compose verification
+
+Prerequisites: Python 3.10+ and running Docker Desktop with Compose 2.24.4+.
+Run from the repository root:
+
+```bash
+python3 -m unittest discover -s scripts/tests_compose -v
+```
+
+The test copies the current contents of Git-tracked files, including uncommitted
+tracked edits, to a temporary directory. It excludes local credentials, learning
+materials and build output. A unique Compose project builds the four application
+images and starts all nine services with fresh named volumes. A generated port
+overlay uses `!override` to replace fixed host ports with ephemeral loopback ports;
+Kafka clients use the internal listener. The normal development stack is untouched.
+
+The test waits for healthy containers and checks each application readiness endpoint.
+It submits a seeded B2C order for two CHAIR-001 units, checks HTTP 202/PENDING,
+polls for CONFIRMED, verifies a committed inventory reservation, and observes
+one SMTP notification row and the matching email in Mailpit. This is one positive
+integration scenario, not comprehensive smoke or oversell coverage.
+
+Ignored `target/compose-verification/<project>/` retains startup/container logs and
+`result.json`. `up_build_wait_seconds` measures the complete Compose build/start/wait
+command; it includes build and Docker overhead. Fresh database volumes do not mean
+cold image downloads or empty BuildKit caches. The source commit identifies the
+baseline; the test may include uncommitted tracked working-tree changes.
+
+Cleanup removes only the invocation's containers, network, volumes and locally
+named Compose image tags, and checks that its labelled resources are gone. It does
+not remove the normal development stack or BuildKit caches. See Docker's
+[Compose merge documentation](https://docs.docker.com/reference/compose-file/merge/)
+for the version requirement of `!override`.

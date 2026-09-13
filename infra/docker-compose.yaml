@@ -84,6 +84,122 @@ services:
     ports:
       - "127.0.0.1:8025:8025"
       - "127.0.0.1:1025:1025"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8025/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  catalog-pricing-service:
+    build:
+      context: ../services/catalog-pricing-service
+    mem_limit: 512m
+    cpus: 1
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orderflow?currentSchema=catalog
+      SPRING_DATA_REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", "http://localhost:8081/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  order-service:
+    build:
+      context: ../services/order-service
+    mem_limit: 512m
+    cpus: 1
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orderflow?currentSchema=orders
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CATALOG_PRICING_BASE_URL: http://catalog-pricing-service:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      catalog-pricing-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", "http://localhost:8082/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  inventory-service:
+    build:
+      context: ../services/inventory-service
+    mem_limit: 512m
+    cpus: 1
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orderflow?currentSchema=inventory
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      INVENTORY_OUTBOX_RELAY_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", "http://localhost:8083/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  notification-service:
+    build:
+      context: ../services/notification-service
+    mem_limit: 512m
+    cpus: 1
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:8084:8084"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      MICRONAUT_ENVIRONMENTS: local
+      DATASOURCES_DEFAULT_URL: jdbc:postgresql://postgres:5432/orderflow?currentSchema=notifications
+      KAFKA_BOOTSTRAP: kafka:9092
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", "http://localhost:8084/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
 
 volumes:
   postgres-data:

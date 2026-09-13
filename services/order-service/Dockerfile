@@ -10,6 +10,7 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked ./mvnw -B -ntp -DskipTest
 RUN cp target/order-service-*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --destination extracted
 
 FROM eclipse-temurin:25-jre AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /application
 COPY --from=build /build/extracted/dependencies/ ./
 COPY --from=build /build/extracted/spring-boot-loader/ ./

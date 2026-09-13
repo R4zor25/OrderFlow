@@ -9,6 +9,7 @@ COPY src/ src/
 RUN --mount=type=cache,target=/root/.m2,sharing=locked ./mvnw -B -ntp -DskipTests package
 
 FROM eclipse-temurin:25-jre AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /application
 COPY --from=build /build/target/notification-service-*.jar application.jar
 USER 10001:10001
