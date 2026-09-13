@@ -233,3 +233,23 @@ To stop the normal stack while preserving its named volumes:
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.yaml down
 ```
+
+
+## End-to-end scenarios
+
+```bash
+MAILPIT_URL=http://localhost:8025 scripts/smoke.sh
+python3 -m unittest discover -s scripts/tests_compose -p test_scenarios.py -v
+```
+
+The smoke script checks B2C/B2B pricing, HTTP idempotency, confirmation, stock
+rejection, cancellation and notification persistence. Mailpit capture checks are
+optional when running the script directly. Stock/reservation and notification
+read APIs are not implemented yet, so these observations use read-only SQL.
+
+The disposable integration test also prepares a ten-unit fixture and runs
+`scripts/oversell-test.sh`: 50 parallel orders must produce exactly ten
+confirmations, forty rejections and ten matching reservations. The standalone
+oversell script never resets stock and requires its fixture to be prepared first.
+Use an exclusively owned test environment; these scripts create real orders.
+See [scenario configuration and limits](scripts/README.md#order-smoke-and-oversell-scenarios).

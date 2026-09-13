@@ -172,3 +172,75 @@ named Compose image tags, and checks that its labelled resources are gone. It do
 not remove the normal development stack or BuildKit caches. See Docker's
 [Compose merge documentation](https://docs.docker.com/reference/compose-file/merge/)
 for the version requirement of `!override`.
+
+## Order smoke and oversell scenarios
+
+The scripts require Bash 3.2+, curl and jq. The default SQL inspection uses Docker
+Compose and the existing local `infra/.env`; no host PostgreSQL client is needed.
+Start the full stack first. Run only against an exclusively used test environment
+with the seeded customers, products and unchanged prices:
+
+```bash
+scripts/smoke.sh
+MAILPIT_URL=http://localhost:8025 scripts/smoke.sh
+```
+
+`smoke.sh` checks B2C list pricing, B2B GOLD quantity-tier pricing, an exact
+idempotent replay, confirmation, rejection on insufficient stock, cancellation,
+released reservations and restored availability. Notification rows are checked;
+setting `MAILPIT_URL` additionally checks captured SMTP subjects. Database
+persistence alone does not prove email delivery. Smoke creates three orders and
+cancels the two confirmed orders on success. A failed or interrupted run can
+leave its orders/reservations behind; it does not delete historical data.
+
+`oversell-test.sh` sends 50 concurrent one-unit orders to CHAIR-002 by default.
+It requires exactly ten available units before sending any request. Normal seed
+stock is 100, so the default script deliberately fails its precondition against
+an unprepared database. It never resets stock. On success it requires exactly
+10 CONFIRMED and 40 REJECTED orders, zero remaining availability, matching
+per-order reservations and a valid stock invariant. The ten reservations remain
+in that test environment after the script finishes.
+
+The repeatable integration test prepares ten units only in its own disposable
+stack, exercises both scripts and removes that stack:
+
+```bash
+python3 -m unittest discover -s scripts/tests_compose -p test_scenarios.py -v
+```
+
+It also verifies notification partition assignment, refusal of a depleted
+oversell fixture, and failure for an unreachable HTTP endpoint. Evidence is kept
+under ignored `target/compose-verification/<project>/`, alongside the earlier
+stack-verification evidence. The integration fixture uses ephemeral loopback
+ports and an invocation-specific password, never the normal development volumes.
+
+| Variable | Default / purpose |
+|---|---|
+| `BASE_URL` | `http://localhost:8082`; order-service base URL, without `/api/v1` |
+| `TIMEOUT_SECONDS` | `60`; each SQL/event wait; one shared final-state deadline for oversell |
+| `SQL_MODE` | `compose`, or `psql` for a separately reachable PostgreSQL database |
+| `COMPOSE_FILE` / `COMPOSE_ENV_FILE` | Repository `infra/docker-compose.yaml` / `infra/.env` |
+| `COMPOSE_PROJECT_NAME` | `orderflow`; selects the database container for inspection |
+| `MAILPIT_URL` | Optional HTTP base URL for SMTP capture inspection |
+| `SKU` / `EXPECTED_AVAILABLE` / `REQUESTS` | Oversell: `CHAIR-002` / `10` / `50` |
+
+For a remote order API, use `BASE_URL` and explicitly configure SQL inspection
+against the **same environment**. In `SQL_MODE=psql`, the PostgreSQL client reads
+normal libpq settings such as `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSFILE`
+and `PGSSLMODE`. Supply credentials outside the command line/repository. This
+mode requires an installed `psql` client and network access to that database;
+changing only `BASE_URL` is insufficient. AWS execution has not been verified.
+
+Every SQL inspection runs inside `BEGIN READ ONLY`, with a five-second statement
+timeout. `psql` does not prompt for a password; the host-client mode also has a
+five-second connection timeout. HTTP requests have connection and total timeouts.
+Poll intervals are 250 ms; these are condition waits, not fixed sleeps pretending
+that processing completed. The configured wait deadline is not a strict overall
+script-duration limit because individual calls and other stages consume time.
+Any transport, assertion, SQL or deadline failure returns a non-zero exit status.
+
+Fresh Kafka startup disables broker automatic topic creation. The existing Spring
+`NewTopic` declarations create the business/DLT topics with three partitions,
+preventing a consumer from auto-creating a one-partition topic before the owners
+initialize it. An existing Kafka volume retains its existing topics; this setting
+does not migrate or recreate them.
