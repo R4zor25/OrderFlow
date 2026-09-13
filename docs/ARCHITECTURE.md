@@ -372,6 +372,12 @@ Local Compose orchestration:
 
 - Kafka broker automatic topic creation is disabled in local Compose. Existing Spring `NewTopic` declarations create the business and DLT topics with three partitions; consumers cannot race those declarations by auto-creating single-partition topics. Existing persisted topics are not recreated by this setting.
 
+Continuous integration:
+
+- `.github/workflows/ci.yml` detects affected services on PRs and main pushes, then runs independent Java 25 verification and ARM64 Docker builds without publication. Shared contracts, infrastructure, scripts and build/workflow configuration select all services.
+- Maven's optional `coverage` profile creates JaCoCo XML/HTML reports. Available test/coverage reports are uploaded after success or failure. A stable `CI result` job distinguishes valid empty selections from failed or skipped selected jobs.
+- The workflow does not deploy or enable branch protection. Hosted operation requires a GitHub repository; local checks and outstanding hosted validation are documented in [CI.md](CI.md).
+
 ## 7. Repository layout
 
 ```

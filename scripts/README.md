@@ -244,3 +244,24 @@ Fresh Kafka startup disables broker automatic topic creation. The existing Sprin
 preventing a consumer from auto-creating a one-partition topic before the owners
 initialize it. An existing Kafka volume retains its existing topics; this setting
 does not migrate or recreate them.
+
+## CI-filter regression tests
+
+The suite uses the actual pinned `dorny/paths-filter` action with temporary Git
+repositories. It checks inventory-only, two-service, contract, infrastructure,
+root-build, workflow and documentation-only changes. It does not reimplement the
+filter matcher in Python or call GitHub's pull-request API. Node 24 is used in CI.
+
+To obtain the same action locally in a temporary directory:
+
+```bash
+ci_filter_dir=$(mktemp -d)
+git clone --depth 1 --branch v4.0.3 https://github.com/dorny/paths-filter.git "$ci_filter_dir/paths-filter"
+test "$(git -C "$ci_filter_dir/paths-filter" rev-parse HEAD)" = ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+PATHS_FILTER_ACTION="$ci_filter_dir/paths-filter/dist/index.js" python3 -m unittest discover -s scripts/tests_ci -v
+```
+
+Without `PATHS_FILTER_ACTION`, the suite reports skipped tests rather than claiming
+it verified the filters. The CI detector checks out the pinned action and runs this
+suite before service selection. These tests require only Git, Node and Python;
+no Docker containers or normal application data are accessed.

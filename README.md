@@ -253,3 +253,15 @@ confirmations, forty rejections and ten matching reservations. The standalone
 oversell script never resets stock and requires its fixture to be prepared first.
 Use an exclusively owned test environment; these scripts create real orders.
 See [scenario configuration and limits](scripts/README.md#order-smoke-and-oversell-scenarios).
+
+## Continuous integration
+
+[The CI workflow](.github/workflows/ci.yml) runs on pull requests and pushes to
+`main`. Path filters select affected services, which run Java 25 Maven verification
+with real Testcontainers, generate coverage reports and build ARM64 Docker images
+without publishing. Common contracts/configuration changes select every service;
+documentation-only changes skip service builds. `CI result` provides one stable
+required status. See [CI policy and local verification](docs/CI.md).
+
+The workflow is prepared locally; hosted execution and branch protection still
+need verification after this repository is connected to GitHub.

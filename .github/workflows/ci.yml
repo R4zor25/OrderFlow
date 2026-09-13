@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Check out pinned filter action for regression tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dorny/paths-filter
+          ref: ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+          path: .ci-tools/paths-filter
+          persist-credentials: false
+      - name: Verify filters and script helpers
+        env:
+          PATHS_FILTER_ACTION: ${{ github.workspace }}/.ci-tools/paths-filter/dist/index.js
+        run: |
+          python3 -m unittest discover -s scripts/tests_ci -v
+          python3 -m unittest discover -s scripts/tests -v
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ github.ref }}
+          filters: .github/filters.yaml
+
+  service:
+    name: Verify ${{ matrix.service }}
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: services/${{ matrix.service }}/pom.xml
+      - name: Verify with real infrastructure and coverage
+        run: |
+          ./mvnw -B -ntp -Pcoverage verify
+          test -s target/site/jacoco/jacoco.xml
+          test -s target/site/jacoco/index.html
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reports-${{ matrix.service }}
+          path: |
+            services/${{ matrix.service }}/target/surefire-reports/
+            services/${{ matrix.service }}/target/failsafe-reports/
+            services/${{ matrix.service }}/target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build ARM64 image without publishing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: services/${{ matrix.service }}
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  result:
+    name: CI result
+    needs: [changes, service]
+    if: always()
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Require successful checks or a valid empty selection
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SERVICES: ${{ needs.changes.outputs.services }}
+          SERVICE_RESULT: ${{ needs.service.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          if test "$SERVICES" = '[]'; then
+            test "$SERVICE_RESULT" = skipped
+          else
+            test "$SERVICE_RESULT" = success
+          fi
