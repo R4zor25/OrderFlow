@@ -378,12 +378,17 @@ Continuous integration:
 - Maven's optional `coverage` profile creates JaCoCo XML/HTML reports. Available test/coverage reports are uploaded after success or failure. A stable `CI result` job distinguishes valid empty selections from failed or skipped selected jobs.
 - The workflow does not deploy or enable branch protection. Hosted operation requires a GitHub repository; local checks and outstanding hosted validation are documented in [CI.md](CI.md).
 
-AWS infrastructure foundation:
+AWS runtime configuration:
 
 - `infra/terraform` defines four immutable ECR repositories with scan on push and a five-image lifecycle policy, using the existing default VPC and default subnets in at least two availability zones.
-- A non-public Single-AZ PostgreSQL 17 RDS instance uses encrypted 20 GiB gp3 storage. Its security group accepts TCP 5432 only from the separate task security group. Application ingress is configured with the later ECS/ALB resources.
+- A non-public Single-AZ PostgreSQL 17 RDS instance uses encrypted 20 GiB gp3 storage. Its security group accepts TCP 5432 only from the separate task security group. Application ports accept traffic only from the ALB group; separate proxy ports accept traffic only from the task group.
 - The generated demo database password is stored in SSM SecureString and in the excluded local Terraform state. Outputs expose its parameter ARN, not its value. The shared demo user and disposable database settings are not production isolation or backup policies.
-- Native Terraform tests use a mock AWS provider and assert the configuration contracts without creating cloud resources. Actual regional availability, permissions and connectivity require a live plan/apply; ECS/ALB/OIDC remain subsequent work.
+- Six Linux ARM64 Fargate services share a Cloud Map HTTP namespace and use Service Connect aliases. Every task has 512 CPU units / 1024 MiB, leaving proxy headroom beyond the main container limits. Public IPs enable outbound access; task ingress stays restricted.
+- HTTP ALB path rules forward catalog/order and planned inventory/notification paths to four IP target groups. Inventory stock/reservation and notification inspection HTTP APIs are still absent; routing does not implement them. Container checks use liveness, ALB checks readiness. App services have 90-second grace, 100/200 deployment percentages and rollback circuit breaker.
+- Runtime defaults to zero tasks. First register all endpoints, publish four images under the required full Git SHA, then activate with the same SHA and force a fresh service deployment. Desired-count scaling alone does not refresh the deployment endpoint snapshot. Existing tasks do not learn new Service Connect endpoints automatically. App services ignore task-definition changes made by Terraform so later CI revisions survive; image_tag alone does not deploy a new app revision.
+- Notification's AWS environment enables Kafka consumption/readiness and LOG delivery without SMTP. DB URLs use sslmode=require, which requests encryption without full CA/hostname verification. The execution role injects the one SSM DB password and handles image/log access; the task role has no attached AWS permissions.
+- Kafka/Redis tasks use ephemeral storage: task replacement loses broker events/offsets and Redis idempotency/cache data. This deployment is a temporary demo, not a durable production cluster. SQL-based Compose smoke cannot inspect private RDS from the Mac without an additional observation path.
+- Native Terraform tests use a mock AWS provider and assert the configuration contracts without creating cloud resources. Actual regional availability, permissions and connectivity require a live plan/apply; OIDC and the deployment workflow remain subsequent work.
 
 ## 7. Repository layout
 

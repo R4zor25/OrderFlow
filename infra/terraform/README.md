@@ -1,120 +1,198 @@
-# AWS infrastructure foundation
+# OrderFlow AWS runtime
 
-This module defines the registry, network access and database for a temporary
-OrderFlow demo in `eu-central-1`. ECS services, an ALB and GitHub OIDC deployment
-are added separately. Applying this module alone does not run the applications.
+Terraform defines a temporary ARM64 ECS Fargate environment in `eu-central-1`.
+Local provider-schema and mock tests pass without AWS credentials. No live
+AWS plan/apply or cloud application traffic has been verified. GitHub OIDC and
+the deployment workflow are not implemented yet.
 
-## Resources and inputs
+## Resources
 
-- Four ECR repositories, immutable tags, scan on push, and a policy expiring
-  images beyond the five most recently pushed. Expiration is asynchronous and
-  can remove old deployment/rollback images; this is a short-session demo policy.
-- Existing default VPC and default subnets in at least two availability zones.
-- Task security group with outbound access; application ingress is added with ECS.
-- Database security group allowing TCP 5432 only from the task security group.
-- Non-public Single-AZ PostgreSQL 17 RDS, `db.t4g.micro`, 20 GiB encrypted gp3.
-- A generated 32-character password, shared by RDS and a Standard-tier SSM
-  SecureString at `/<project_name>/db/password`.
+- Four ECR repositories with immutable tags, scan on push and a policy retaining
+  the five latest images. Expiration is asynchronous and can remove rollback images.
+- Existing default VPC/subnets in at least two availability zones; no new VPC or NAT.
+- Non-public PostgreSQL 17 RDS, `db.t4g.micro`, Single-AZ, encrypted 20 GiB gp3.
+- Generated database password in SSM SecureString and private local Terraform state.
+- One ECS cluster, Cloud Map HTTP namespace, six independent Fargate services:
+  catalog-pricing, order, inventory, notification, Kafka and Redis.
+- One internet-facing HTTP ALB, four IP target groups, path routing and default 404.
+- Six application/infrastructure log groups plus a Service Connect proxy log group,
+  each retained for three days; separate execution role and application task role.
 
-| Variable | Default | Constraint |
-|---|---|---|
-| `region` | `eu-central-1` | Use the same region for the whole demo |
+| Input | Default | Constraint |
+| --- | --- | --- |
+| `region` | `eu-central-1` | One region for the demo |
 | `project_name` | `orderflow` | 2–20 lowercase letters/digits, starting with a letter |
-| `db_engine_version` | `17` | PostgreSQL 17 major or available `17.x` minor |
+| `db_engine_version` | `17` | Confirm regional availability of PostgreSQL 17/17.x |
+| `image_tag` | Required | Full 40-character lowercase Git SHA; no `latest` |
+| `runtime_enabled` | `false` | False: six services with zero tasks; true: one task each |
 
-The database name and shared demo user are `orderflow`. Flyway creates each
-service's schema at application startup. No database SQL is run by Terraform.
-The outputs expose repository URLs, VPC/subnet/task-group IDs, database
-endpoint/name/user, and the SSM parameter ARN, never its value.
+Every task uses Linux ARM64, Fargate platform 1.4.0, `awsvpc`, 512 CPU units and
+1024 MiB. The main container has 256 CPU units (relative CPU shares), with hard
+memory limits of 768 MiB for Spring/Kafka, 512 MiB for notification and 384 MiB for
+Redis. Remaining task resources accommodate the managed Service Connect proxy;
+these are initial demo sizes, not production capacity measurements.
+
+## Network and routing
+
+| Service | Internal alias | Proxy ingress | Public path |
+| --- | --- | --- | --- |
+| catalog-pricing-service | `catalog-pricing:8081` | 18081 | `/api/v1/products`, `/api/v1/products/*`, `/api/v1/quotes` |
+| order-service | `order:8082` | 18082 | `/api/v1/orders`, `/api/v1/orders/*` |
+| inventory-service | `inventory:8083` | 18083 | `/api/v1/stock`, `/api/v1/stock/*`, `/api/v1/reservations` |
+| notification-service | `notification:8084` | 18084 | `/api/v1/notifications` |
+| kafka | `kafka:9092` | 19092 | None |
+| redis | `redis:6379` | 16379 | None |
+
+Tasks have public IPs for outbound image/log/secret access. Their security group
+accepts original HTTP application ports only from the ALB group, and proxy ports
+only from the task group. RDS accepts TCP 5432 only from tasks. Public IP assignment
+does not add public inbound access. Default subnet routes and network ACLs must
+still permit this traffic in the real account.
+
+Service Connect uses the original ports in client aliases and different
+`ingress_port_override` ports for proxy-to-proxy traffic. ALB traffic goes directly
+to the original application ports. The namespace is a Cloud Map HTTP namespace,
+not a general DNS zone usable from the Mac.
+
+The inventory stock/reservation and notification inspection HTTP APIs are not
+implemented yet. Their ALB rules prepare routing; they do not create endpoints.
+The existing catalog/order APIs keep their original paths; no rewriting occurs.
+
+## Health and deployment
+
+Container health checks use liveness; ALB target groups use readiness:
+`/actuator/health/readiness` for Spring and `/health/readiness` for Micronaut,
+requiring HTTP 200. Application services have 90 seconds health grace, 100/200
+healthy deployment percentages and circuit breaker with rollback. Java container
+stop timeout and ALB deregistration delay are both 30 seconds.
+
+The first unsuccessful deployment has no previous completed revision to roll
+back to. Terraform resource creation dependencies do not prove dependency readiness.
+ECS retries unhealthy startup; logs, service events and targets must be inspected.
+
+## Runtime configuration and secrets
+
+Spring uses its `aws` profile and service-specific `CATALOG_DB_*`, `ORDER_DB_*`,
+`INVENTORY_DB_*` inputs. Catalog/order use `CATALOG_REDIS_HOST`/`ORDER_REDIS_HOST`.
+Order/inventory receive `KAFKA_BOOTSTRAP=kafka:9092`; order's pricing URL is
+`http://catalog-pricing:8081`. Inventory outbox relay is explicitly enabled.
+
+Notification uses `MICRONAUT_ENVIRONMENTS=aws`, `NOTIFICATION_DB_*` and Kafka inputs.
+Its AWS configuration enables the consumer and Kafka readiness, uses LOG delivery
+and disables JavaMail. No email is sent on this deployment channel.
+
+Flyway creates `catalog`, `orders`, `inventory`, `notifications` in database
+`orderflow`. URLs include `currentSchema` and `sslmode=require`: PostgreSQL TLS is
+requested, but full hostname/CA verification is not configured. The shared demo
+user is not production isolation.
+
+The execution role pulls ECR images, writes existing log streams and reads only
+the DB SSM parameter via `ssm:GetParameters`. ECS injects the password with the
+container `secrets` field. The separate task role has no attached permissions;
+application code makes no AWS API calls. No GitHub deploy role exists yet.
+
+Kafka (`apache/kafka:4.3.1`) is one combined KRaft node, replication factor one,
+heap `-Xms256m -Xmx512m`, advertised broker `kafka:9092`, controller `localhost:9093`.
+Spring's topic configuration creates the two business topics and DLTs; Kafka
+broker auto-topic creation is disabled. Redis uses `redis:7.4.11-bookworm`.
+Both run on ephemeral task storage. Replacing Kafka loses events/offsets;
+replacing Redis loses cache and idempotency keys. Stop the demo for infrastructure
+updates and use durable managed alternatives for production.
 
 ## Local checks without AWS credentials
 
-Use Terraform 1.16.5 or a compatible later 1.16 patch. Provider versions are
-explicitly pinned and recorded in the committed `.terraform.lock.hcl`.
-From the repository root:
+Use Terraform 1.16.5 (compatible later 1.16 patches are allowed) and the committed
+provider lockfile. From the repository root:
 
 ```bash
 terraform -chdir=infra/terraform init -backend=false
 terraform -chdir=infra/terraform fmt -check -recursive
 terraform -chdir=infra/terraform validate
 terraform -chdir=infra/terraform test
+python3 -m unittest discover -s infra/terraform/tests -p 'test_*.py'
 ```
 
-`terraform test` mocks the AWS provider. Its `command = apply` runs against mock
-resources and transient test state, not an AWS deployment. The real random
-provider generates a local password for consistency assertions. No AWS login is
-needed. Positive tests cover the resources; negative tests exercise naming,
-PostgreSQL major-version and subnet-AZ validation.
+The seven native test runs use a mock AWS provider. `command = apply` creates
+transient mock state, not cloud resources. Tests cover bootstrap/activation,
+ports, resource budget, profiles, secret injection, routing, IAM and invalid
+inputs. A separate Python standard-library test traverses the generated Terraform
+dependency graph to verify ALB forwarding association precedes ECS service creation.
+They cannot prove actual AWS permissions, capacity, connectivity, ALB
+traffic, Service Connect behavior or circuit breaker rollback.
 
-These checks validate configuration and provider schemas. They do not verify AWS
-account permissions, live default subnets, regional engine availability, instance
-capacity or connectivity. There has been no live AWS plan/apply for this module.
+## Real bootstrap and activation (requires AWS access)
 
-## Before a real plan
+Confirm account/region, default subnets in two AZs, available PostgreSQL 17 minor
+and `db.t4g.micro` availability. Estimate RDS, ALB, Fargate, logs/storage and public
+IPv4 cost before provisioning; zero tasks still leave chargeable ALB/RDS resources.
+There has been no live deployment for this repository.
 
-Use a non-root identity, enable MFA for the root account, and configure a budget
-alert before provisioning. Estimate the actual region and sizes in the AWS
-Pricing Calculator; budget alerts do not automatically cap spending.
-Install/configure AWS CLI with an appropriate non-root identity, then check the
-account and region explicitly:
+From the repo root, choose the committed source SHA that will label all four images:
 
 ```bash
-aws sts get-caller-identity --region eu-central-1
-aws ec2 describe-vpcs --region eu-central-1 \
-  --filters Name=is-default,Values=true --query 'Vpcs[].VpcId'
-aws rds describe-db-engine-versions --region eu-central-1 --engine postgres \
-  --query "DBEngineVersions[?starts_with(EngineVersion, '17.')].EngineVersion"
+IMAGE_TAG=$(git rev-parse HEAD)
+terraform -chdir=infra/terraform init
+terraform -chdir=infra/terraform plan -var="image_tag=$IMAGE_TAG" \
+  -var='runtime_enabled=false' -out=bootstrap.tfplan
 ```
 
-Check the selected minor supports `db.t4g.micro` using
-`aws rds describe-orderable-db-instance-options`, then pass that available `17.x`
-version to the plan. If the default VPC is missing, resolve that prerequisite
-before planning; this module does not create a replacement network.
+Inspect that saved plan before explicitly applying it. This first phase registers
+all six services/discovery endpoints with zero tasks. Build and publish the four
+ARM64 application images under that exact SHA to the output ECR URLs. Image
+publication and GitHub deployment automation are a separate setup step.
 
-From `infra/terraform`, once authentication and prerequisites are ready:
+Then plan activation with the **same SHA**:
 
 ```bash
-terraform init
-terraform plan -var='db_engine_version=17.x' -out=demo.tfplan
+terraform -chdir=infra/terraform plan -var="image_tag=$IMAGE_TAG" \
+  -var='runtime_enabled=true' -out=activation.tfplan
 ```
 
-Replace `17.x` with an actual supported version from the query. Inspect the plan
-before deciding to run `terraform apply demo.tfplan`. A successful real plan is
-still not proof that capacity or connectivity will be available during apply.
-There is no `github_repo` input at this stage.
+Inspect before applying. All endpoints must already exist: tasks do not pick up
+endpoints introduced after their latest deployment. Activation sets
+`force_new_deployment=true` on all six services, since desired-count scaling alone
+does not create a deployment. The false-to-true transition requests a fresh
+deployment after bootstrap registered all endpoints. An unchanged apply does not
+continuously redeploy; later service configuration changes while enabled may force
+a deployment, including ephemeral Kafka/Redis replacements. Wait for services, check stopped-task
+reasons/logs and ALB target health, then test catalog/order requests. An ALB DNS
+output during bootstrap is not proof of a running application.
 
-## State and secrets
+Application services ignore Terraform changes to `task_definition` so a later
+CI-selected revision is preserved. Changing `image_tag` alone registers new task
+definitions but **does not update existing application services**. Future deployment
+must select the new revision explicitly; first deployment from zero tasks must
+also activate desired count. Other service configuration changes remain managed.
 
-The local state contains the generated password. `sensitive` redacts normal
-output; it does not encrypt the state. State, backups, personal tfvars, provider
-files, crash logs and `*.tfplan` files are excluded from Git. Do not rename saved
-plans to an unignored file. Protect local copies and avoid sharing raw state,
-plan or decrypted SSM output. Keep the provider lockfile in Git.
+The Compose smoke script uses SQL access to check inventory/notifications. It
+cannot connect from the Mac directly to private RDS; cloud smoke needs a separate
+observation method. The ALB does not expose Actuator or Micronaut health paths
+publicly; target group health checks go directly to tasks.
 
-State is required to manage existing resources; deleting it does not delete AWS
-resources. For a team, use a remote backend with encryption, access control and
-locking. SSM credential rotation and distinct per-service database users are
-production improvements outside this demo.
+## State and teardown
 
-## Teardown
+Local state and saved plans contain secrets. Sensitive output masking is not
+state encryption. State/backups, personal tfvars, provider files, crash logs and
+`*.tfplan` files stay excluded; keep `.terraform.lock.hcl` in Git. Do not rename
+saved plans to unignored files. Keep state to manage the resources; deleting it
+does not delete AWS resources. Team use requires a protected remote backend.
 
-RDS has no automatic backups or final snapshot in this demo, and deletion
-protection is disabled. `terraform destroy` deletes the database and its data.
-Keep any needed evidence before running it.
-
-ECR `force_delete` is false. If repositories contain images, explicitly inspect
-and remove their contents before teardown. For each repository URL from
-`terraform output -json ecr_repository_urls`, use its repository name
-`orderflow/<service>` with `aws ecr list-images`; then delete the chosen image
-IDs with `aws ecr batch-delete-image`. Use the same account and region. Do not
-copy this operation onto unrelated repositories. There is no automatic purge.
+RDS has no automatic backup/final snapshot and deletion protection is disabled.
+Destroying this demo deletes its data. Inspect and explicitly empty only the
+intended ECR repositories before teardown (`force_delete=false`). Use the same
+image SHA input when planning teardown:
 
 ```bash
-terraform plan -destroy -out=destroy.tfplan
-terraform apply destroy.tfplan
+terraform -chdir=infra/terraform plan -destroy -var="image_tag=$IMAGE_TAG" -out=destroy.tfplan
 ```
 
-Finally check the AWS console for resources remaining in the target region.
-Do not delete the local state as a substitute for teardown. When later ECS/ALB
-resources are added to this module, include them in the teardown and account
-checks too.
+Inspect before explicitly applying. Confirm ECS, Cloud Map, ALB, RDS, log groups,
+network interfaces, public IPv4 and ECR resources in the account afterward.
+Deleting local state is not teardown.
+
+## References
+
+- [Service Connect networking, startup and proxy resources](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-connect-concepts-deploy.html)
+- [Task execution role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html)
+- [SSM secret injection](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-ssm-paramstore.html)
+- [Deployment circuit breaker](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html)

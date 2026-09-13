@@ -25,3 +25,17 @@ variable "db_engine_version" {
     error_message = "The database engine version must be PostgreSQL 17, optionally with a minor version."
   }
 }
+
+variable "image_tag" {
+  description = "Full Git commit SHA of application images; publish before enabling runtime."
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.image_tag))
+    error_message = "Image tag must be a full 40-character lowercase Git commit SHA."
+  }
+}
+variable "runtime_enabled" {
+  description = "Start tasks only after all discovery endpoints and application images exist."
+  type        = bool
+  default     = false
+}

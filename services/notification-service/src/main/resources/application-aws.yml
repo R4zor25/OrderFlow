@@ -1,0 +1,19 @@
+datasources:
+  default:
+    url: ${NOTIFICATION_DB_URL}
+    username: ${NOTIFICATION_DB_USERNAME}
+    password: ${NOTIFICATION_DB_PASSWORD}
+
+notification:
+  channel: LOG
+  messaging:
+    enabled: true
+
+kafka:
+  health:
+    enabled: true
+  bootstrap:
+    servers: ${KAFKA_BOOTSTRAP}
+
+javamail:
+  enabled: false

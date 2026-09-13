@@ -266,9 +266,11 @@ required status. See [CI policy and local verification](docs/CI.md).
 The workflow is prepared locally; hosted execution and branch protection still
 need verification after this repository is connected to GitHub.
 
-## AWS infrastructure foundation
+## AWS runtime configuration
 
-The [Terraform module](infra/terraform/README.md) defines ECR repositories,
-network access and a private PostgreSQL database for the temporary demo.
-Configuration and mock-provider tests run locally without AWS credentials.
-A real AWS plan/apply and the later ECS/ALB/OIDC deployment are still required.
+The [Terraform module](infra/terraform/README.md) defines ECR, the default network,
+private RDS/SSM, six ARM64 ECS Fargate services, Service Connect and an HTTP ALB.
+Runtime is disabled by default until discovery endpoints and SHA-tagged images
+exist. Local mock-provider tests and the notification AWS-profile integration
+check do not prove an AWS deployment. Live plan/apply, image publication and cloud
+traffic remain unverified; GitHub OIDC/deployment automation is still pending.

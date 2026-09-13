@@ -37,3 +37,28 @@ output "ecr_repository_urls" {
   description = "Image repository URL keyed by service name."
   value       = { for name, repository in aws_ecr_repository.service : name => repository.repository_url }
 }
+
+output "cluster_name" {
+  description = "ECS cluster name for deployments."
+  value       = aws_ecs_cluster.main.name
+}
+output "service_names" {
+  description = "ECS service names keyed by application or infrastructure service."
+  value       = { for name, service in merge(aws_ecs_service.application, aws_ecs_service.infrastructure) : name => service.name }
+}
+output "task_definition_arns" {
+  description = "Terraform task revisions; deployments can select newer application revisions."
+  value       = { for name, task in merge(aws_ecs_task_definition.application, aws_ecs_task_definition.infrastructure) : name => task.arn }
+}
+output "alb_dns_name" {
+  description = "Public entry point; runtime-disabled bootstrap has no healthy targets."
+  value       = aws_lb.main.dns_name
+}
+output "runtime_enabled" {
+  description = "Whether Terraform requests one task per service."
+  value       = var.runtime_enabled
+}
+output "image_tag" {
+  description = "Application image SHA selected for Terraform task definitions."
+  value       = var.image_tag
+}
