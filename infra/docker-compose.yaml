@@ -155,6 +155,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CATALOG_PRICING_BASE_URL: http://catalog-pricing-service:8081
+      ORDER_JWT_JWK_SET_URI: http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +164,8 @@ services:
       kafka:
         condition: service_healthy
       catalog-pricing-service:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", "http://localhost:8082/actuator/health/readiness"]

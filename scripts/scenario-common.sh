@@ -24,6 +24,16 @@ initialize() {
   WORK=$(mktemp -d "${TMPDIR:-/tmp}/orderflow-scenario.XXXXXX")
   trap 'rm -rf "$WORK"' EXIT
   RUN_ID="$(date +%s)-$$-$RANDOM"
+  KEYCLOAK_URL=${KEYCLOAK_URL:-http://localhost:8180}; KEYCLOAK_URL=${KEYCLOAK_URL%/}; DEMO_USER_PASSWORD=${DEMO_USER_PASSWORD:?Set DEMO_USER_PASSWORD to the demo users password}
+}
+
+token_for() {
+  local username=$1 response
+  response=$(curl -sS --connect-timeout 3 --max-time 15 -X POST \
+    -d grant_type=password -d client_id=orderflow-cli \
+    --data-urlencode "username=$username" --data-urlencode "password=$DEMO_USER_PASSWORD" \
+    "$KEYCLOAK_URL/realms/orderflow/protocol/openid-connect/token") || fail "Token request failed for $username"
+  jq -er '.access_token' <<< "$response" || fail "No access token for $username"
 }
 
 sql_read() {
@@ -41,6 +51,7 @@ sql_read() {
 request() {
   local method=$1 path=$2 expected=$3 output=$4 body=${5:-} key=${6:-} code
   local args=(-sS --connect-timeout 3 --max-time 15 -X "$method" -o "$output" -w '%{http_code}')
+  if [[ -n "${TOKEN:-}" ]]; then args+=(-H "Authorization: Bearer $TOKEN"); fi
   if [[ -n "$body" ]]; then args+=(-H 'Content-Type: application/json' --data "$body"); fi
   if [[ -n "$key" ]]; then args+=(-H "Idempotency-Key: $key"); fi
   code=$(curl "${args[@]}" "$BASE_URL$path") || fail "HTTP transport failure: $method $path"

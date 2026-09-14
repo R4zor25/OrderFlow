@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -77,9 +78,17 @@ class ComposeStackTest(unittest.TestCase):
     def base_url(self, service, port):
         return 'http://' + self.invoke('port', service, str(port)).splitlines()[0]
 
-    def read_json(self, url):
-        with urllib.request.urlopen(url, timeout=5) as response:
+    def read_json(self, url, token=None):
+        request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token} if token else {})
+        with urllib.request.urlopen(request, timeout=5) as response:
             return json.load(response)
+
+    def password_token(self, username):
+        form = urllib.parse.urlencode({'grant_type': 'password', 'client_id': 'orderflow-cli',
+                                       'username': username, 'password': 'password-test'}).encode()
+        url = self.base_url('keycloak', 8080) + '/realms/orderflow/protocol/openid-connect/token'
+        with urllib.request.urlopen(urllib.request.Request(url, data=form), timeout=10) as response:
+            return json.load(response)['access_token']
 
     def await_result(self, probe, timeout=60):
         deadline = time.monotonic() + timeout
@@ -106,17 +115,18 @@ class ComposeStackTest(unittest.TestCase):
             health = '/health' if service == 'notification-service' else '/actuator/health'
             self.assertEqual(self.read_json(self.base_url(service, port) + health + '/readiness')['status'], 'UP')
         order_base = self.base_url('order-service', 8082)
+        token = self.password_token('consumer.one')
         request = urllib.request.Request(order_base + '/api/v1/orders', method='POST',
-            data=json.dumps({'customerId': '11111111-1111-4111-8111-111111111111',
-                             'lines': [{'sku': 'CHAIR-001', 'quantity': 2}]}).encode(),
-            headers={'Content-Type': 'application/json', 'Idempotency-Key': str(uuid.uuid4())})
+            data=json.dumps({'lines': [{'sku': 'CHAIR-001', 'quantity': 2}]}).encode(),
+            headers={'Content-Type': 'application/json', 'Idempotency-Key': str(uuid.uuid4()),
+                     'Authorization': 'Bearer ' + token})
         with urllib.request.urlopen(request, timeout=10) as response:
             self.assertEqual(response.status, 202)
             placed = json.load(response)
         order_id = str(uuid.UUID(placed['id']))
         self.assertEqual(placed['status'], 'PENDING')
         confirmed = self.await_result(lambda: (details if (details := self.read_json(
-            order_base + '/api/v1/orders/' + order_id))['status'] == 'CONFIRMED' else None))
+            order_base + '/api/v1/orders/' + order_id, token))['status'] == 'CONFIRMED' else None))
         self.assertEqual(confirmed['lines'][0]['quantity'], 2)
         reservation = self.invoke('exec', '-T', 'postgres', 'psql', '-U', 'orderflow', '-d', 'orderflow', '-Atc',
             f"select quantity || ':' || status from inventory.reservation where order_id='{order_id}'::uuid")

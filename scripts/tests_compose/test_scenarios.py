@@ -19,6 +19,8 @@ class ScenarioScriptsTest(test_stack.ComposeStackTest):
                            COMPOSE_FILE=str(self.export / 'infra/docker-compose.yaml'),
                            COMPOSE_ENV_FILE=str(self.export / 'test.env'),
                            COMPOSE_PROJECT_NAME=self.project, SQL_MODE='compose',
+                           KEYCLOAK_URL=self.base_url('keycloak', 8080),
+                           DEMO_USER_PASSWORD='password-test',
                            TIMEOUT_SECONDS='90')
         assignment = self.invoke('exec', '-T', 'kafka', '/opt/kafka/bin/kafka-consumer-groups.sh',
                                  '--bootstrap-server', 'kafka:9092', '--group', 'notification-service',

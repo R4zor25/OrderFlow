@@ -10,11 +10,12 @@ EXPECTED_AVAILABLE=${EXPECTED_AVAILABLE:-10}
 [[ "$SKU" =~ ^[A-Z0-9._-]{1,32}$ ]] || fail 'SKU must contain 1 to 32 uppercase letters, digits, dots, underscores or hyphens'
 [[ "$REQUESTS" =~ ^[1-9][0-9]*$ && "$EXPECTED_AVAILABLE" =~ ^[1-9][0-9]*$ ]] || fail 'REQUESTS and EXPECTED_AVAILABLE must be positive integers'
 (( REQUESTS > EXPECTED_AVAILABLE )) || fail 'REQUESTS must exceed EXPECTED_AVAILABLE'
+TOKEN=$(token_for consumer.one)
 before=$(sql_read "SELECT on_hand || ':' || reserved || ':' || (on_hand-reserved) FROM inventory.stock_item WHERE sku='$SKU'")
 IFS=: read -r on_hand reserved available <<< "$before"
 [[ "$available" == "$EXPECTED_AVAILABLE" ]] || fail "Expected $EXPECTED_AVAILABLE available units, found ${available:-missing} for $SKU; prepare an isolated fixture first"
 
-body=$(jq -nc --arg sku "$SKU" '{customerId:"11111111-1111-4111-8111-111111111111",lines:[{sku:$sku,quantity:1}]}')
+body=$(jq -nc --arg sku "$SKU" '{lines:[{sku:$sku,quantity:1}]}')
 pids=()
 for (( i=1; i<=REQUESTS; i++ )); do
   request POST /api/v1/orders 202 "$WORK/order-$i.json" "$body" "oversell-$RUN_ID-$i" &

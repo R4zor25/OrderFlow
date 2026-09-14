@@ -22,13 +22,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.kafka.KafkaContainer;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -62,14 +65,13 @@ class OutboxRelayIntegrationTest {
                 new BigDecimal("45.85"), null, "BASE")),
             new BigDecimal("169.80"), new BigDecimal("45.85"), new BigDecimal("215.65"),
             Instant.parse("2026-10-01T10:15:30Z")));
-        var response = mvc.perform(post("/api/v1/orders")
+        var response = mvc.perform(post("/api/v1/orders").with(standardCustomer())
                 .header("traceparent", "00-11111111111111111111111111111111-2222222222222222-01")
                 .header("tracestate", "vendor=value")
                 .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"customerId":"33333333-3333-4333-8333-333333333333",
-                     "lines":[{"sku":"CHAIR-001","quantity":2}]}
+                    {"lines":[{"sku":"CHAIR-001","quantity":2}]}
                     """))
             .andExpect(status().isAccepted())
             .andReturn().getResponse();
@@ -130,4 +132,9 @@ class OutboxRelayIntegrationTest {
                 """, Boolean.class, eventId)).isTrue());
     }
 
+
+    private static RequestPostProcessor standardCustomer() {
+        return jwt().jwt(token -> token.claim("customer_id", "33333333-3333-4333-8333-333333333333"))
+            .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
+    }
 }

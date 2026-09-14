@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -119,7 +120,7 @@ class StockResultKafkaIntegrationTest {
     @Test
     void acknowledgesLateResultForCancelledOrderWithoutConfirmingIt() throws Exception {
         UUID orderId = createOrder();
-        cancellation.cancel(orderId);
+        cancellation.cancel(orderId, OrderAccess.admin());
         UUID eventId = UUID.randomUUID();
         var event = new EventEnvelope<>(eventId, "StockReserved", 1, Instant.now(),
             orderId.toString(), new StockReservedPayload(orderId,

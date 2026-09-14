@@ -26,20 +26,19 @@ public class OrderQueryService {
     }
 
     @Transactional(readOnly = true)
-    public OrderDetails get(UUID id) {
-        List<OrderDetails> matches = loadDetails(List.of(id));
-        if (matches.isEmpty()) {
-            throw new OrderNotFoundException("Order not found: " + id);
-        }
-        return matches.getFirst();
+    public OrderDetails get(UUID id, OrderAccess access) {
+        return loadDetails(List.of(id)).stream()
+            .filter(details -> access.permits(details.customerId()))
+            .findFirst()
+            .orElseThrow(() -> new OrderNotFoundException("Order not found: " + id));
     }
 
     @Transactional(readOnly = true)
-    public Page<OrderDetails> list(UUID customerId, OrderStatus status, int page, int size) {
+    public Page<OrderDetails> list(OrderAccess access, UUID customerId, OrderStatus status, int page, int size) {
         if (page < 0 || size < 1 || size > 100) {
             throw new InvalidOrderException("page must be non-negative and size must be between 1 and 100");
         }
-        Page<UUID> ids = orders.findPageIds(customerId, status, PageRequest.of(page, size));
+        Page<UUID> ids = orders.findPageIds(access.listFilter(customerId), status, PageRequest.of(page, size));
         if (ids.isEmpty()) {
             return new PageImpl<>(List.of(), ids.getPageable(), ids.getTotalElements());
         }

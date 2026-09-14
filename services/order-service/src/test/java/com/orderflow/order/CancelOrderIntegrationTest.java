@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -76,14 +77,14 @@ class CancelOrderIntegrationTest {
         UUID id = createOrder();
         when(clock.instant()).thenReturn(CANCELLED);
 
-        var result = cancellation.cancel(id);
+        var result = cancellation.cancel(id, OrderAccess.admin());
 
         assertThat(result.status()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(result.updatedAt()).isEqualTo(CANCELLED);
         assertThat(result.lines()).hasSize(1);
-        assertThat(queries.get(id).status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1);
-        assertThatThrownBy(() -> cancellation.cancel(id))
+        assertThatThrownBy(() -> cancellation.cancel(id, OrderAccess.admin()))
             .isInstanceOf(InvalidOrderStateException.class);
     }
 
@@ -92,7 +93,7 @@ class CancelOrderIntegrationTest {
         UUID id = createOrder();
         when(clock.instant()).thenReturn(CANCELLED);
 
-        cancellation.cancel(id);
+        cancellation.cancel(id, OrderAccess.admin());
 
         String message = jdbc.queryForObject("""
             select payload::text from orders.outbox_event
@@ -117,11 +118,11 @@ class CancelOrderIntegrationTest {
         });
         when(clock.instant()).thenReturn(CANCELLED);
 
-        assertThat(cancellation.cancel(confirmedId).status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(cancellation.cancel(confirmedId, OrderAccess.admin()).status()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(cancelEvent(confirmedId).payload().previousStatus()).isEqualTo(OrderStatus.CONFIRMED);
-        assertThatThrownBy(() -> cancellation.cancel(rejectedId))
+        assertThatThrownBy(() -> cancellation.cancel(rejectedId, OrderAccess.admin()))
             .isInstanceOf(InvalidOrderStateException.class);
-        assertThat(queries.get(rejectedId).status()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(queries.get(rejectedId, OrderAccess.admin()).status()).isEqualTo(OrderStatus.REJECTED);
         assertThat(jdbc.queryForObject("""
             select count(*) from orders.outbox_event where aggregate_id = ?
             """, Integer.class, rejectedId)).isZero();
@@ -136,11 +137,11 @@ class CancelOrderIntegrationTest {
             throw new IllegalStateException("Failed after outbox insert");
         }).when(outbox).write(any());
 
-        assertThatThrownBy(() -> cancellation.cancel(id))
+        assertThatThrownBy(() -> cancellation.cancel(id, OrderAccess.admin()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("Failed after outbox insert");
 
-        assertThat(queries.get(id).status()).isEqualTo(OrderStatus.PENDING);
+        assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.PENDING);
         assertThat(orders.findById(id).orElseThrow().getVersion()).isZero();
         assertThat(jdbc.queryForObject("""
             select count(*) from orders.outbox_event where aggregate_id = ?
@@ -149,8 +150,22 @@ class CancelOrderIntegrationTest {
 
     @Test
     void missingOrderDoesNotCreateAnything() {
-        assertThatThrownBy(() -> cancellation.cancel(UUID.randomUUID()))
+        assertThatThrownBy(() -> cancellation.cancel(UUID.randomUUID(), OrderAccess.admin()))
             .isInstanceOf(OrderNotFoundException.class);
+    }
+
+    @Test
+    void customerCannotCancelAnotherCustomersOrder() {
+        UUID id = createOrder();
+        UUID other = UUID.fromString("44444444-4444-4444-8444-444444444444");
+
+        assertThatThrownBy(() -> cancellation.cancel(id, OrderAccess.customer(other)))
+            .isInstanceOf(OrderNotFoundException.class);
+
+        assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.PENDING);
+        assertThat(jdbc.queryForObject("""
+            select count(*) from orders.outbox_event where aggregate_id = ?
+            """, Integer.class, id)).isZero();
     }
 
     @Test
@@ -164,7 +179,7 @@ class CancelOrderIntegrationTest {
 
         assertThatThrownBy(() -> transactions.executeWithoutResult(status -> orders.saveAndFlush(stale)))
             .isInstanceOfAny(OptimisticLockingFailureException.class, OptimisticLockException.class);
-        assertThat(queries.get(id).status()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1);
     }
 

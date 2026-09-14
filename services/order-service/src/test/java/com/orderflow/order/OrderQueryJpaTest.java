@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -56,7 +57,7 @@ class OrderQueryJpaTest {
         var statistics = factory.unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
 
-        var result = queries.list(customer.getId(), OrderStatus.PENDING, 0, 5);
+        var result = queries.list(OrderAccess.admin(), customer.getId(), OrderStatus.PENDING, 0, 5);
 
         assertThat(result.getContent()).hasSize(5)
             .allSatisfy(item -> assertThat(item.lines()).hasSize(2));
@@ -66,7 +67,7 @@ class OrderQueryJpaTest {
             .isSortedAccordingTo((left, right) -> right.compareTo(left));
         assertThat(statistics.getPrepareStatementCount()).isEqualTo(3);
 
-        var secondPage = queries.list(customer.getId(), OrderStatus.PENDING, 1, 5);
+        var secondPage = queries.list(OrderAccess.admin(), customer.getId(), OrderStatus.PENDING, 1, 5);
         assertThat(secondPage.getContent()).hasSize(5);
         assertThat(secondPage.getContent().stream().map(item -> item.id()).toList())
             .doesNotContainAnyElementsOf(result.getContent().stream().map(item -> item.id()).toList());
@@ -84,9 +85,9 @@ class OrderQueryJpaTest {
         entityManager.flush();
         entityManager.clear();
 
-        var result = queries.list(standard.getId(), OrderStatus.CONFIRMED, 0, 10);
-        var empty = queries.list(standard.getId(), OrderStatus.CONFIRMED, 1, 10);
-        var unfiltered = queries.list(null, null, 0, 10);
+        var result = queries.list(OrderAccess.admin(), standard.getId(), OrderStatus.CONFIRMED, 0, 10);
+        var empty = queries.list(OrderAccess.admin(), standard.getId(), OrderStatus.CONFIRMED, 1, 10);
+        var unfiltered = queries.list(OrderAccess.admin(), null, null, 0, 10);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().id()).isEqualTo(confirmed.getId());
@@ -103,12 +104,25 @@ class OrderQueryJpaTest {
         UUID id = orders.saveAndFlush(order(customer, 1)).getId();
         entityManager.clear();
 
-        var result = queries.get(id);
+        var result = queries.get(id, OrderAccess.admin());
 
         assertThat(result.id()).isEqualTo(id);
         assertThat(result.lines()).hasSize(2);
-        assertThatThrownBy(() -> queries.get(UUID.randomUUID()))
+        assertThatThrownBy(() -> queries.get(UUID.randomUUID(), OrderAccess.admin()))
             .isInstanceOf(OrderNotFoundException.class);
+    }
+
+    @Test
+    void customerQueryHidesOtherCustomersOrder() {
+        Customer customer = customers.findById(UUID.fromString("33333333-3333-4333-8333-333333333333"))
+            .orElseThrow();
+        UUID id = orders.saveAndFlush(order(customer, 1)).getId();
+        entityManager.clear();
+        UUID other = UUID.fromString("44444444-4444-4444-8444-444444444444");
+
+        assertThatThrownBy(() -> queries.get(id, OrderAccess.customer(other)))
+            .isInstanceOf(OrderNotFoundException.class);
+        assertThat(queries.get(id, OrderAccess.customer(customer.getId())).id()).isEqualTo(id);
     }
 
     private static Order order(Customer customer, int index) {

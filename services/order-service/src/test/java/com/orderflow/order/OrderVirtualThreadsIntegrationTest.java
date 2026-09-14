@@ -22,7 +22,8 @@ import static org.awaitility.Awaitility.await;
 
 @AutoConfigureMetrics
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class, OrderVirtualThreadsIntegrationTest.RequestConfiguration.class})
+@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class, TestJwtConfiguration.class,
+    OrderVirtualThreadsIntegrationTest.RequestConfiguration.class})
 class OrderVirtualThreadsIntegrationTest {
 
     private final HikariDataSource dataSource;
@@ -38,7 +39,8 @@ class OrderVirtualThreadsIntegrationTest {
 
     @Test
     void handlesRealHttpRequestOnVirtualThread() {
-        Boolean virtual = client().get().uri("/test/virtual-thread").retrieve().body(Boolean.class);
+        Boolean virtual = client().get().uri("/test/virtual-thread")
+            .header("Authorization", "Bearer " + TestJwts.withRoles("CUSTOMER")).retrieve().body(Boolean.class);
         assertThat(virtual).isTrue();
     }
 

@@ -105,7 +105,20 @@ cd services/order-service
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`.
+Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`, plus `ORDER_JWT_ISSUER_URI` and `ORDER_JWT_JWK_SET_URI`.
+
+Order endpoints need a bearer token from the local Keycloak. Request one with the demo user's password grant and place an order; the customer comes from the token, not the request body:
+
+```bash
+TOKEN=$(curl -s -d grant_type=password -d client_id=orderflow-cli -d username=standard \
+  --data-urlencode "password=$DEMO_USER_PASSWORD" \
+  http://localhost:8180/realms/orderflow/protocol/openid-connect/token | jq -r .access_token)
+curl -i -X POST http://localhost:8082/api/v1/orders -H "Authorization: Bearer $TOKEN" \
+  -H 'Idempotency-Key: demo-1' -H 'Content-Type: application/json' \
+  -d '{"lines":[{"sku":"CHAIR-001","quantity":2}]}'
+```
+
+A customer sees only their own orders: another customer's order ID returns 404, and listing with another customer's `customerId` returns 403. The `admin` user can read and cancel any order.
 
 
 ## Health probes and shutdown

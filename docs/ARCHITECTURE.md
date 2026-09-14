@@ -11,8 +11,9 @@ In scope:
 - Inventory that never oversells under concurrent load
 - Customer notifications driven by events
 - Local run with Docker Compose, CI on GitHub Actions, a real (temporary) deployment to AWS ECS Fargate
+- OAuth2/JWT with Keycloak: customer and admin roles, service-to-service client credentials (local Compose; AWS identity provider is a later step)
 
-Out of scope (deliberately): payments, shipping, UI, search, multi-currency conversion, full auth (optional stretch phase).
+Out of scope (deliberately): payments, shipping, UI, search, multi-currency conversion.
 
 ## 2. Tech stack
 
@@ -29,6 +30,7 @@ Out of scope (deliberately): payments, shipping, UI, search, multi-currency conv
 | HTTP client | Spring HTTP interface (`@HttpExchange`) on `RestClient` | |
 | Resilience | Resilience4j circuit breaker + retry | If the Boot 4 starter is not compatible, use `resilience4j-circuitbreaker` core programmatically |
 | API | REST, JSON, `/api/v1`, Bean Validation, RFC 9457 `ProblemDetail`, springdoc-openapi | |
+| Security | Spring Security OAuth2 resource server and client, Keycloak 26.8 | JWT roles claim, customer_id claim, client credentials for pricing |
 | Testing | JUnit 5, AssertJ, Mockito, Testcontainers (Postgres, Kafka, Redis), WireMock | |
 | Observability | Actuator health probes, Micrometer metrics, Micrometer Tracing (OTel), structured JSON logs | |
 | Containers | Multi-stage Dockerfiles, `linux/arm64` images | M1 builds arm64 natively, Fargate runs ARM64 (Graviton) |
@@ -155,16 +157,16 @@ stateDiagram-v2
 
 Endpoints:
 
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/api/v1/orders` | Requires `Idempotency-Key` header; returns `202 Accepted`, `Location`, status `PENDING` |
-| GET | `/api/v1/orders/{id}` | Includes lines and status |
-| GET | `/api/v1/orders?customerId=&status=&page=&size=` | Paged; lines loaded without N+1 (fetch join or `@EntityGraph`, verified by a test counting queries) |
-| POST | `/api/v1/orders/{id}/cancel` | Invalid transition returns 409 ProblemDetail |
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/api/v1/orders` | `CUSTOMER` | Requires `Idempotency-Key` header; returns `202 Accepted`, `Location`, status `PENDING` |
+| GET | `/api/v1/orders/{id}` | `CUSTOMER` (own orders) or `ADMIN` | Includes lines and status |
+| GET | `/api/v1/orders?customerId=&status=&page=&size=` | `CUSTOMER` (own orders) or `ADMIN` | Paged; lines loaded without N+1 (fetch join or `@EntityGraph`, verified by a test counting queries) |
+| POST | `/api/v1/orders/{id}/cancel` | `CUSTOMER` (own orders) or `ADMIN` | Invalid transition returns 409 ProblemDetail |
 
 Place-order flow:
 
-1. Validate request (Bean Validation).
+1. Authenticate the customer from the JWT; `customerId` comes from the `customer_id` claim, not the request body. Validate the request (Bean Validation).
 2. Idempotency: `SET idem:{customerId}:{key} IN_PROGRESS NX EX 86400` in Redis. If the key exists with a stored result, return the same response. If it exists with a different request hash, return 422. If `IN_PROGRESS`, return 409.
 3. Call catalog-pricing `POST /api/v1/quotes` through the HTTP interface client. Timeouts: connect 1 s, read 2 s. Retry: 2 attempts with backoff on connect errors and 5xx. Circuit breaker around it; when open, respond `503` ProblemDetail with `Retry-After`.
 4. In one DB transaction: insert order + lines with status `PENDING`, insert `OrderPlaced` into `outbox_event`.
@@ -335,6 +337,15 @@ API conventions:
 Configuration:
 
 - `application.yml` with profiles `local` (Compose) and `aws`. Secrets only from environment variables; on AWS they come from SSM Parameter Store through the ECS task definition.
+
+Security:
+
+- Keycloak realm `orderflow` issues the tokens. The `ADMIN` and `CUSTOMER` roles arrive as a flat `roles` claim and the customer identity as a `customer_id` claim.
+- Clients: `orderflow-cli` (public, password grant, used by scripts and demos) and `order-service` (confidential, client credentials, `pricing.quote` scope).
+- The issuer is `http://localhost:8180/realms/orderflow`; inside Compose the service reads the signing keys from the internal address `http://keycloak:8080/...`, so the issuer claim and the key endpoint differ on purpose.
+- Missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role returns 403 (`/problems/forbidden`).
+- A customer asking for another customer's order gets 404 (`/problems/order-not-found`), so existence is not revealed; listing with another customer's `customerId` is 403. Admins can read and cancel any order but cannot place one.
+- The password grant is a local demo compromise; it is not enabled for production use.
 
 Observability:
 

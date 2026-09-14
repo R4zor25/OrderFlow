@@ -5,6 +5,7 @@ import java.net.URI;
 import com.orderflow.order.config.PricingResilienceProperties;
 import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.InvalidOrderStateException;
+import com.orderflow.order.domain.OrderAccessDeniedException;
 import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.domain.CustomerNotFoundException;
 import com.orderflow.order.domain.IdempotencyException;
@@ -53,6 +54,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(OrderNotFoundException.class)
     public ProblemDetail orderNotFound(OrderNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "order-not-found", "Order not found", exception.getMessage());
+    }
+
+    @ExceptionHandler(OrderAccessDeniedException.class)
+    public ProblemDetail orderAccessDenied(OrderAccessDeniedException exception) {
+        return problem(HttpStatus.FORBIDDEN, "forbidden", "Forbidden", exception.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

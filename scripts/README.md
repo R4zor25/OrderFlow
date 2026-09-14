@@ -175,7 +175,7 @@ for the version requirement of `!override`.
 
 ## Order smoke and oversell scenarios
 
-The scripts require Bash 3.2+, curl and jq. The default SQL inspection uses Docker
+The scripts require Bash 3.2+, curl and jq. They fetch customer tokens from Keycloak (`KEYCLOAK_URL`, default `http://localhost:8180`) with the `orderflow-cli` client's password grant and the demo users' `DEMO_USER_PASSWORD`, which must be set in the environment. The default SQL inspection uses Docker
 Compose and the existing local `infra/.env`; no host PostgreSQL client is needed.
 Start the full stack first. Run only against an exclusively used test environment
 with the seeded customers, products and unchanged prices:

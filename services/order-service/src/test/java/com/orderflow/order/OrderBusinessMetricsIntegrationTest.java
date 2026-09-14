@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -27,15 +28,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @AutoConfigureMetrics
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class})
+@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class, TestJwtConfiguration.class})
 @MockitoBean(types = PricingGateway.class)
 class OrderBusinessMetricsIntegrationTest {
 
@@ -142,7 +146,7 @@ class OrderBusinessMetricsIntegrationTest {
     @Test
     void doesNotCountLateFailureForCancelledOrder() {
         UUID id = transactions.execute(status -> place(B2B));
-        cancellation.cancel(id);
+        cancellation.cancel(id, OrderAccess.admin());
         double before = rejected();
         results.failed(UUID.randomUUID(), id, "Insufficient stock");
         assertThat(rejected()).isEqualTo(before);
@@ -161,6 +165,30 @@ class OrderBusinessMetricsIntegrationTest {
         String replay = postOrder(key);
         assertThat(replay).isEqualTo(first);
         assertThat(placed("B2B")).isEqualTo(before + 1);
+    }
+
+    @Test
+    void rejectsExpiredTokenOverHttp() {
+        assertThatThrownBy(() -> client().post().uri("/api/v1/orders")
+            .header("Idempotency-Key", UUID.randomUUID().toString())
+            .header("Authorization", "Bearer " + TestJwts.expiredCustomer(B2B))
+            .contentType(MediaType.APPLICATION_JSON).body("""
+                {"lines":[{"sku":"CHAIR-001","quantity":1}]}
+                """).retrieve().toBodilessEntity())
+            .isInstanceOf(HttpClientErrorException.Unauthorized.class);
+    }
+
+    @Test
+    void rejectsCustomerTokenWithoutCustomerIdOverHttp() {
+        assertThatThrownBy(() -> client().post().uri("/api/v1/orders")
+            .header("Idempotency-Key", UUID.randomUUID().toString())
+            .header("Authorization", "Bearer " + TestJwts.withRoles("CUSTOMER"))
+            .contentType(MediaType.APPLICATION_JSON).body("""
+                {"lines":[{"sku":"CHAIR-001","quantity":1}]}
+                """).retrieve().toBodilessEntity())
+            .isInstanceOfSatisfying(HttpClientErrorException.Forbidden.class, error -> assertThat(
+                JsonMapper.builder().build().readTree(error.getResponseBodyAsString()).path("type").asString())
+                .isEqualTo("/problems/forbidden"));
     }
 
     @Test
@@ -202,9 +230,9 @@ class OrderBusinessMetricsIntegrationTest {
 
     private String postOrder(String key) {
         var response = client().post().uri("/api/v1/orders").header("Idempotency-Key", key)
+            .header("Authorization", "Bearer " + TestJwts.customer(B2B))
             .contentType(MediaType.APPLICATION_JSON).body("""
-                {"customerId":"33333333-3333-4333-8333-333333333333",
-                 "lines":[{"sku":"CHAIR-001","quantity":1}]}
+                {"lines":[{"sku":"CHAIR-001","quantity":1}]}
                 """).retrieve().toEntity(String.class);
         assertThat(response.getStatusCode().value()).isEqualTo(202);
         return response.getBody();

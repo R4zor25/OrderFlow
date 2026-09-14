@@ -1,4 +1,10 @@
 spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${ORDER_JWT_ISSUER_URI}
+          jwk-set-uri: ${ORDER_JWT_JWK_SET_URI}
   datasource:
     url: ${ORDER_DB_URL}
     username: ${ORDER_DB_USERNAME}

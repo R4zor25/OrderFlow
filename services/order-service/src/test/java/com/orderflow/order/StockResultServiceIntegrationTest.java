@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -116,7 +117,7 @@ class StockResultServiceIntegrationTest {
     @Test
     void ignoresLateStockResultForCancelledOrder() {
         UUID orderId = createOrder();
-        cancellation.cancel(orderId);
+        cancellation.cancel(orderId, OrderAccess.admin());
         UUID eventId = UUID.randomUUID();
 
         results.reserved(eventId, orderId);

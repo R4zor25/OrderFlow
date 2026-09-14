@@ -28,12 +28,11 @@ public class CancelOrderService {
     }
 
     @Transactional
-    public OrderDetails cancel(UUID id) {
-        var matches = orders.findAllWithCustomerAndLines(List.of(id));
-        if (matches.isEmpty()) {
-            throw new OrderNotFoundException("Order not found: " + id);
-        }
-        var order = matches.getFirst();
+    public OrderDetails cancel(UUID id, OrderAccess access) {
+        var order = orders.findAllWithCustomerAndLines(List.of(id)).stream()
+            .filter(candidate -> access.permits(candidate.getCustomer().getId()))
+            .findFirst()
+            .orElseThrow(() -> new OrderNotFoundException("Order not found: " + id));
         var previousStatus = order.getStatus();
         var now = clock.instant();
         order.cancel(now);

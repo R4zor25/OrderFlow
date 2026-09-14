@@ -27,7 +27,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
@@ -40,6 +42,7 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,7 +80,7 @@ class PlaceOrderIntegrationTest {
             return validQuote();
         });
 
-        var response = mvc.perform(post("/api/v1/orders")
+        var response = mvc.perform(post("/api/v1/orders").with(standardCustomer())
                 .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON).content(requestBody()))
             .andExpect(status().isAccepted())
@@ -111,7 +114,7 @@ class PlaceOrderIntegrationTest {
         when(pricing.quote(any(QuoteRequest.class))).thenThrow(
             new PricingUnavailableException("Unavailable", new RuntimeException()));
 
-        mvc.perform(post("/api/v1/orders")
+        mvc.perform(post("/api/v1/orders").with(standardCustomer())
                 .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON).content(requestBody()))
             .andExpect(status().isServiceUnavailable());
@@ -128,7 +131,7 @@ class PlaceOrderIntegrationTest {
         doThrow(new IllegalStateException("Outbox unavailable"))
             .when(outbox).write(any());
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mvc.perform(post("/api/v1/orders")
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mvc.perform(post("/api/v1/orders").with(standardCustomer())
             .header("Idempotency-Key", UUID.randomUUID().toString())
             .contentType(MediaType.APPLICATION_JSON).content(requestBody())))
             .hasRootCauseInstanceOf(IllegalStateException.class);
@@ -247,7 +250,7 @@ class PlaceOrderIntegrationTest {
     }
 
     private MockHttpServletResponse postOrder(String key, String body) throws Exception {
-        return mvc.perform(post("/api/v1/orders")
+        return mvc.perform(post("/api/v1/orders").with(standardCustomer())
                 .header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON).content(body))
             .andReturn().getResponse();
@@ -255,8 +258,7 @@ class PlaceOrderIntegrationTest {
 
     private static String requestBody() {
         return """
-            {"customerId":"33333333-3333-4333-8333-333333333333",
-             "lines":[{"sku":"CHAIR-001","quantity":2}]}
+            {"lines":[{"sku":"CHAIR-001","quantity":2}]}
             """;
     }
 
@@ -266,5 +268,10 @@ class PlaceOrderIntegrationTest {
                 new BigDecimal("169.80"), new BigDecimal("45.85"), null, "BASE")),
             new BigDecimal("169.80"), new BigDecimal("45.85"), new BigDecimal("215.65"),
             Instant.parse("2026-10-01T10:15:30Z"));
+    }
+
+    private static RequestPostProcessor standardCustomer() {
+        return jwt().jwt(token -> token.claim("customer_id", "33333333-3333-4333-8333-333333333333"))
+            .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
     }
 }
