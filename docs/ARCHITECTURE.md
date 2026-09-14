@@ -109,7 +109,7 @@ Endpoints:
 | GET | `/api/v1/products/{sku}` | 404 as ProblemDetail |
 | POST | `/api/v1/products` | Admin, validated |
 | PUT | `/api/v1/products/{sku}/prices` | Replaces tier list for a group, evicts cache |
-| POST | `/api/v1/quotes` | Side-effect free; used by order-service |
+| POST | `/api/v1/quotes` | Side-effect free; internal, called by order-service only (not routed by the ALB) |
 
 Quote request/response:
 
@@ -384,7 +384,7 @@ AWS runtime configuration:
 - A non-public Single-AZ PostgreSQL 17 RDS instance uses encrypted 20 GiB gp3 storage. Its security group accepts TCP 5432 only from the separate task security group. Application ports accept traffic only from the ALB group; separate proxy ports accept traffic only from the task group.
 - The generated demo database password is stored in SSM SecureString and in the excluded local Terraform state. Outputs expose its parameter ARN, not its value. The shared demo user and disposable database settings are not production isolation or backup policies.
 - Six Linux ARM64 Fargate services share a Cloud Map HTTP namespace and use Service Connect aliases. Every task has 512 CPU units / 1024 MiB, leaving proxy headroom beyond the main container limits. Public IPs enable outbound access; task ingress stays restricted.
-- HTTP ALB path rules forward catalog/order and planned inventory/notification paths to four IP target groups. Inventory stock/reservation and notification inspection HTTP APIs are still absent; routing does not implement them. Container checks use liveness, ALB checks readiness. App services have 90-second grace, 100/200 deployment percentages and rollback circuit breaker.
+- HTTP ALB path rules forward catalog/order and planned inventory/notification paths to four IP target groups. The ALB security group admits TCP 80 only from the configured `allowed_ingress_cidrs`, and the quote endpoint stays internal. Inventory stock/reservation and notification inspection HTTP APIs are still absent; routing does not implement them. Container checks use liveness, ALB checks readiness. App services have 90-second grace, 100/200 deployment percentages and rollback circuit breaker.
 - Runtime defaults to zero tasks. First register all endpoints, publish four images under the required full Git SHA, then activate with the same SHA and force a fresh service deployment. Desired-count scaling alone does not refresh the deployment endpoint snapshot. Existing tasks do not learn new Service Connect endpoints automatically. App services ignore task-definition changes made by Terraform so later CI revisions survive; image_tag alone does not deploy a new app revision.
 - Notification's AWS environment enables Kafka consumption/readiness and LOG delivery without SMTP. DB URLs use sslmode=require, which requests encryption without full CA/hostname verification. The execution role injects the one SSM DB password and handles image/log access; the task role has no attached AWS permissions.
 - Kafka/Redis tasks use ephemeral storage: task replacement loses broker events/offsets and Redis idempotency/cache data. This deployment is a temporary demo, not a durable production cluster. SQL-based Compose smoke cannot inspect private RDS from the Mac without an additional observation path.

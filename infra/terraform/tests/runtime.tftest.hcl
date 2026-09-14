@@ -31,10 +31,11 @@ override_resource {
   values = { id = "sg-bbbbbbbbbbbbbbbbb" }
 }
 variables {
-  image_tag            = "66dbedbd4866e4e2ba794c10895d27e811511d72"
-  github_repository    = "test-org/orderflow"
-  github_owner_id      = "100"
-  github_repository_id = "200"
+  image_tag             = "66dbedbd4866e4e2ba794c10895d27e811511d72"
+  github_repository     = "test-org/orderflow"
+  github_owner_id       = "100"
+  github_repository_id  = "200"
+  allowed_ingress_cidrs = ["203.0.113.10/32"]
 }
 run "bootstrap_runtime" {
   command = apply
@@ -123,7 +124,7 @@ run "bootstrap_runtime" {
     condition = (alltrue([for name, rule in aws_lb_listener_rule.application :
       rule.priority == lookup({ catalog-pricing-service = 10, order-service = 20, inventory-service = 30, notification-service = 40 }, name) &&
       rule.action[0].target_group_arn == aws_lb_target_group.application[name].arn &&
-      one(rule.condition).path_pattern[0].values == toset(lookup({ catalog-pricing-service = ["/api/v1/products", "/api/v1/products/*", "/api/v1/quotes"], order-service = ["/api/v1/orders", "/api/v1/orders/*"], inventory-service = ["/api/v1/stock", "/api/v1/stock/*", "/api/v1/reservations"], notification-service = ["/api/v1/notifications"] }, name))
+      one(rule.condition).path_pattern[0].values == toset(lookup({ catalog-pricing-service = ["/api/v1/products", "/api/v1/products/*"], order-service = ["/api/v1/orders", "/api/v1/orders/*"], inventory-service = ["/api/v1/stock", "/api/v1/stock/*", "/api/v1/reservations"], notification-service = ["/api/v1/notifications"] }, name))
     ]))
     error_message = "Public API paths must map to the owning service without rewriting."
   }
@@ -135,7 +136,9 @@ run "bootstrap_runtime" {
       ]) && alltrue([for name, rule in aws_vpc_security_group_ingress_rule.application :
       rule.from_port == lookup({ catalog-pricing-service = 8081, order-service = 8082, inventory-service = 8083, notification-service = 8084 }, name) && rule.to_port == rule.from_port &&
       rule.security_group_id == aws_security_group.tasks.id && rule.referenced_security_group_id == aws_security_group.alb.id && rule.cidr_ipv4 == null
-    ]) && aws_vpc_security_group_ingress_rule.alb_http.cidr_ipv4 == "0.0.0.0/0" && aws_vpc_security_group_ingress_rule.alb_http.from_port == 80 && aws_vpc_security_group_ingress_rule.alb_http.to_port == 80)
+      ]) && length(aws_vpc_security_group_ingress_rule.alb_http) == 1 && alltrue([for rule in aws_vpc_security_group_ingress_rule.alb_http :
+      rule.security_group_id == aws_security_group.alb.id && rule.cidr_ipv4 == "203.0.113.10/32" && rule.ip_protocol == "tcp" && rule.from_port == 80 && rule.to_port == 80
+    ]))
     error_message = "Only the ALB may reach application ports from outside the task group."
   }
   assert {

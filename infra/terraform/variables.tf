@@ -67,3 +67,25 @@ variable "github_repository_id" {
     error_message = "GitHub repository ID must be a positive numeric string."
   }
 }
+
+variable "allowed_ingress_cidrs" {
+  description = "IPv4 CIDR blocks allowed to reach the public ALB on port 80, typically the operator's public address as /32."
+  type        = list(string)
+  nullable    = false
+
+  validation {
+    condition     = length(var.allowed_ingress_cidrs) >= 1 && length(var.allowed_ingress_cidrs) <= 10
+    error_message = "Provide between 1 and 10 allowed ingress CIDR blocks."
+  }
+  validation {
+    condition = alltrue([for cidr in var.allowed_ingress_cidrs :
+      can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/(0|[1-9]|[12][0-9]|3[0-2])$", cidr)) &&
+      try(cidr == format("%s/%s", cidrhost(cidr, 0), split("/", cidr)[1]), false)
+    ])
+    error_message = "Every allowed ingress entry must be a valid IPv4 network CIDR without host bits, for example 203.0.113.10/32."
+  }
+  validation {
+    condition     = alltrue([for cidr in var.allowed_ingress_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
+    error_message = "Ingress from 0.0.0.0/0 is not allowed while the APIs have no authentication."
+  }
+}

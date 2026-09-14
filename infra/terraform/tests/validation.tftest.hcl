@@ -31,10 +31,11 @@ override_resource {
   values = { id = "sg-bbbbbbbbbbbbbbbbb" }
 }
 variables {
-  image_tag            = "66dbedbd4866e4e2ba794c10895d27e811511d72"
-  github_repository    = "test-org/orderflow"
-  github_owner_id      = "100"
-  github_repository_id = "200"
+  image_tag             = "66dbedbd4866e4e2ba794c10895d27e811511d72"
+  github_repository     = "test-org/orderflow"
+  github_owner_id       = "100"
+  github_repository_id  = "200"
+  allowed_ingress_cidrs = ["203.0.113.10/32"]
 }
 run "reject_invalid_project_name" {
   command = plan
@@ -53,4 +54,52 @@ run "reject_single_availability_zone" {
     values = { availability_zone = "eu-central-1a" }
   }
   expect_failures = [aws_db_subnet_group.main]
+}
+run "reject_public_ingress_cidr" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["0.0.0.0/0"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_empty_ingress_cidrs" {
+  command = plan
+  variables { allowed_ingress_cidrs = [] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_too_many_ingress_cidrs" {
+  command = plan
+  variables { allowed_ingress_cidrs = [for i in range(11) : "203.0.113.${i}/32"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_invalid_ingress_cidr" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["not-a-cidr"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_misaligned_ingress_cidr" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["203.0.113.10/24"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_ipv6_ingress_cidr" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["2001:db8::/32"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "deduplicates_ingress_cidrs" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["203.0.113.10/32", "203.0.113.10/32", "198.51.100.0/24"] }
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.alb_http)) == toset(["203.0.113.10/32", "198.51.100.0/24"])
+    error_message = "Each distinct allowed CIDR must produce exactly one ALB ingress rule."
+  }
+}
+run "reject_zero_prefix_with_leading_zero" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["0.0.0.0/00"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+run "reject_non_canonical_prefix" {
+  command = plan
+  variables { allowed_ingress_cidrs = ["10.0.0.0/08"] }
+  expect_failures = [var.allowed_ingress_cidrs]
 }

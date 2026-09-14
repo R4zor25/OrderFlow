@@ -47,17 +47,19 @@ resource "aws_vpc_security_group_egress_rule" "tasks" {
   ip_protocol       = "-1"
 }
 
+# The description predates the CIDR restriction; changing it would replace the group attached to the ALB.
 resource "aws_security_group" "alb" {
   name        = "${var.project_name}-alb"
   description = "Public HTTP entry point for the demo."
   vpc_id      = data.aws_vpc.default.id
 }
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  for_each          = toset(var.allowed_ingress_cidrs)
   security_group_id = aws_security_group.alb.id
   ip_protocol       = "tcp"
   from_port         = 80
   to_port           = 80
-  cidr_ipv4         = "0.0.0.0/0"
+  cidr_ipv4         = each.value
 }
 resource "aws_vpc_security_group_egress_rule" "alb_application" {
   for_each                     = local.applications

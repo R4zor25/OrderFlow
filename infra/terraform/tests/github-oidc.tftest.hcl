@@ -39,10 +39,11 @@ override_resource {
   values = { arn = "arn:aws:iam::123456789012:role/orderflow-task" }
 }
 variables {
-  image_tag            = "66dbedbd4866e4e2ba794c10895d27e811511d72"
-  github_repository    = "test-org/orderflow"
-  github_owner_id      = "100"
-  github_repository_id = "200"
+  image_tag             = "66dbedbd4866e4e2ba794c10895d27e811511d72"
+  github_repository     = "test-org/orderflow"
+  github_owner_id       = "100"
+  github_repository_id  = "200"
+  allowed_ingress_cidrs = ["203.0.113.10/32"]
 }
 run "github_identity_and_permissions" {
   command = apply

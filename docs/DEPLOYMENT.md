@@ -6,10 +6,11 @@ The manual `Application release` workflow publishes four ARM64 images and can up
 
 - A GitHub repository with `main` and the checked-in workflows, plus an AWS account and a human identity permitted to manage the Terraform resources.
 - Terraform inputs `github_repository` (`owner/repository`), `github_owner_id` and `github_repository_id` (positive numeric strings). Get the IDs from GitHub repository/owner metadata; example test IDs are not real configuration.
+- Terraform input `allowed_ingress_cidrs`: the IPv4 networks allowed to call the ALB, for example `["203.0.113.10/32"]` with your own public address. `0.0.0.0/0` is rejected. When your address changes, update the excluded `.tfvars` file and apply again. The first apply after this input was introduced replaces the former single ALB ingress rule, so expect a short gap in ALB access during that apply.
 - The immutable OIDC subject format: `repo:owner@owner_id/repository@repository_id:ref:refs/heads/main`. New repositories use this format according to [GitHub's current AWS OIDC guide](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws). Older repositories must enable/check it before use. There is no legacy subject fallback.
 - Do not add a workflow `environment:` without deliberately changing the trust model; it changes the subject claim.
 
-Keep personal input values in an excluded `.tfvars` file. The deploy role has exact application ECR/ECS scopes and PassRole for the project's two runtime roles. Only the AWS job requests an OIDC token; verification jobs have no AWS session. [ECS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html) explains the task-definition resource scopes and the unscoped DescribeTaskDefinition action.
+Keep personal input values in an excluded `.tfvars` file; the Terraform README commands use `infra/terraform/orderflow.tfvars` (`*.tfvars` is ignored by Git). The deploy role has exact application ECR/ECS scopes and PassRole for the project's two runtime roles. Only the AWS job requests an OIDC token; verification jobs have no AWS session. [ECS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html) explains the task-definition resource scopes and the unscoped DescribeTaskDefinition action.
 
 If this account already has a GitHub OIDC provider, import it instead of trying to create another provider for the same URL. From `infra/terraform`, replacing the example account with the actual account:
 

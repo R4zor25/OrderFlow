@@ -10,7 +10,7 @@ locals {
       health_path    = "/actuator/health/readiness"
       health_command = "curl -fsS http://localhost:8081/actuator/health/liveness >/dev/null || exit 1"
       priority       = 10
-      paths          = ["/api/v1/products", "/api/v1/products/*", "/api/v1/quotes"]
+      paths          = ["/api/v1/products", "/api/v1/products/*"]
       environment = {
         CATALOG_DB_URL         = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=catalog&sslmode=require"
         CATALOG_DB_USERNAME    = aws_db_instance.main.username

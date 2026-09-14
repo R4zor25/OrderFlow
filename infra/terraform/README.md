@@ -36,7 +36,7 @@ these are initial demo sizes, not production capacity measurements.
 
 | Service | Internal alias | Proxy ingress | Public path |
 | --- | --- | --- | --- |
-| catalog-pricing-service | `catalog-pricing:8081` | 18081 | `/api/v1/products`, `/api/v1/products/*`, `/api/v1/quotes` |
+| catalog-pricing-service | `catalog-pricing:8081` | 18081 | `/api/v1/products`, `/api/v1/products/*` |
 | order-service | `order:8082` | 18082 | `/api/v1/orders`, `/api/v1/orders/*` |
 | inventory-service | `inventory:8083` | 18083 | `/api/v1/stock`, `/api/v1/stock/*`, `/api/v1/reservations` |
 | notification-service | `notification:8084` | 18084 | `/api/v1/notifications` |
@@ -48,6 +48,12 @@ accepts original HTTP application ports only from the ALB group, and proxy ports
 only from the task group. RDS accepts TCP 5432 only from tasks. Public IP assignment
 does not add public inbound access. Default subnet routes and network ACLs must
 still permit this traffic in the real account.
+
+The ALB security group accepts TCP 80 only from the required `allowed_ingress_cidrs`
+input: 1–10 IPv4 network CIDR blocks, typically your public address as `/32`;
+`0.0.0.0/0` is rejected while the APIs have no authentication. `POST /api/v1/quotes`
+is not routed by the ALB; order-service reaches it through the `catalog-pricing:8081`
+Service Connect alias.
 
 Service Connect uses the original ports in client aliases and different
 `ingress_port_override` ports for proxy-to-proxy traffic. ALB traffic goes directly
@@ -132,7 +138,7 @@ From the repo root, choose the committed source SHA that will label all four ima
 ```bash
 IMAGE_TAG=$(git rev-parse HEAD)
 terraform -chdir=infra/terraform init
-terraform -chdir=infra/terraform plan -var="image_tag=$IMAGE_TAG" \
+terraform -chdir=infra/terraform plan -var-file=orderflow.tfvars -var="image_tag=$IMAGE_TAG" \
   -var='runtime_enabled=false' -out=bootstrap.tfplan
 ```
 
@@ -144,7 +150,7 @@ publication and GitHub deployment automation are a separate setup step.
 Then plan activation with the **same SHA**:
 
 ```bash
-terraform -chdir=infra/terraform plan -var="image_tag=$IMAGE_TAG" \
+terraform -chdir=infra/terraform plan -var-file=orderflow.tfvars -var="image_tag=$IMAGE_TAG" \
   -var='runtime_enabled=true' -out=activation.tfplan
 ```
 
@@ -183,7 +189,7 @@ intended ECR repositories before teardown (`force_delete=false`). Use the same
 image SHA input when planning teardown:
 
 ```bash
-terraform -chdir=infra/terraform plan -destroy -var="image_tag=$IMAGE_TAG" -out=destroy.tfplan
+terraform -chdir=infra/terraform plan -destroy -var-file=orderflow.tfvars -var="image_tag=$IMAGE_TAG" -out=destroy.tfplan
 ```
 
 Inspect before explicitly applying. Confirm ECS, Cloud Map, ALB, RDS, log groups,
@@ -199,4 +205,4 @@ Deleting local state is not teardown.
 
 ## GitHub release identity
 
-Supply required `github_repository`, `github_owner_id` and `github_repository_id` inputs from real GitHub metadata. The OIDC trust requires the exact immutable repository identity on main. Personal tfvars stay excluded. Existing GitHub providers must be imported with compatible state ownership. `github_deploy_role_arn` and `aws_account_id` provide the workflow variables. See [deployment setup and first activation](../../docs/DEPLOYMENT.md); publish images before enabling runtime, and preserve `runtime_enabled=true` thereafter.
+Supply required `github_repository`, `github_owner_id`, `github_repository_id` and `allowed_ingress_cidrs` inputs; the GitHub values come from real GitHub metadata. The OIDC trust requires the exact immutable repository identity on main. Personal tfvars stay excluded. Existing GitHub providers must be imported with compatible state ownership. `github_deploy_role_arn` and `aws_account_id` provide the workflow variables. See [deployment setup and first activation](../../docs/DEPLOYMENT.md); publish images before enabling runtime, and preserve `runtime_enabled=true` thereafter.
