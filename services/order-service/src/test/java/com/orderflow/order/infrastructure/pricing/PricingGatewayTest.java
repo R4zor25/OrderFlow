@@ -9,6 +9,10 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.web.client.RestClient;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -21,7 +25,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -43,7 +49,16 @@ class PricingGatewayTest {
             URI.create(server.baseUrl()), Duration.ofSeconds(1), Duration.ofSeconds(2)
         );
         var configuration = new PricingClientConfiguration();
-        RestClient restClient = configuration.pricingRestClient(RestClient.builder(), properties);
+        server.stubFor(post("/token").willReturn(okJson(
+            "{\"access_token\":\"test-token\",\"token_type\":\"Bearer\",\"expires_in\":300}")));
+        var registration = ClientRegistration.withRegistrationId(PricingClientConfiguration.PRICING_REGISTRATION_ID)
+            .clientId("order-service").clientSecret("secret")
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .scope("pricing.quote").tokenUri(server.baseUrl() + "/token").build();
+        var registrations = new InMemoryClientRegistrationRepository(registration);
+        var clients = new InMemoryOAuth2AuthorizedClientService(registrations);
+        var manager = configuration.pricingAuthorizedClientManager(registrations, clients, properties);
+        RestClient restClient = configuration.pricingRestClient(RestClient.builder(), properties, manager, clients);
         PricingClient client = configuration.pricingClient(restClient);
         var resilience = new PricingResilienceConfiguration();
         var resilienceProperties = new PricingResilienceProperties(
@@ -192,6 +207,86 @@ class PricingGatewayTest {
 
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(4));
         server.verify(1, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void readTimeoutStopsWaitingForSlowTokenEndpoint() {
+        server.stubFor(post("/token").willReturn(okJson(
+            "{\"access_token\":\"test-token\",\"token_type\":\"Bearer\",\"expires_in\":300}")
+            .withFixedDelay(5000)));
+        long started = System.nanoTime();
+
+        assertThatThrownBy(() -> gateway.quote(sampleRequest()))
+            .isInstanceOf(PricingUnavailableException.class);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(4));
+        server.verify(0, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void sendsBearerTokenToCatalog() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes")).willReturn(aResponse()
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {"customerGroup":"B2B_GOLD","currency":"EUR","lines":[],
+                 "totalNet":0,"totalVat":0,"totalGross":0,
+                 "quotedAt":"2026-10-01T10:15:30Z"}
+                """)));
+
+        gateway.quote(sampleRequest());
+
+        server.verify(postRequestedFor(urlEqualTo("/api/v1/quotes"))
+            .withHeader("Authorization", equalTo("Bearer test-token")));
+    }
+
+    @Test
+    void treatsCatalogUnauthorizedAsUnavailableWithoutRetry() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes")).willReturn(aResponse().withStatus(401)));
+
+        assertThatThrownBy(() -> gateway.quote(sampleRequest())).isInstanceOf(PricingUnavailableException.class);
+
+        server.verify(1, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void treatsCatalogForbiddenAsUnavailableWithoutRetry() {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes")).willReturn(aResponse().withStatus(403)));
+
+        assertThatThrownBy(() -> gateway.quote(sampleRequest())).isInstanceOf(PricingUnavailableException.class);
+
+        server.verify(1, postRequestedFor(urlEqualTo("/api/v1/quotes")));
+    }
+
+    @Test
+    void fetchesNewTokenAfterCatalogUnauthorized() {
+        assertTokenEvictedAfterCatalogStatus(401);
+    }
+
+    @Test
+    void fetchesNewTokenAfterCatalogForbidden() {
+        assertTokenEvictedAfterCatalogStatus(403);
+    }
+
+    private void assertTokenEvictedAfterCatalogStatus(int status) {
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .inScenario("rejected token")
+            .whenScenarioStateIs(Scenario.STARTED)
+            .willReturn(aResponse().withStatus(status))
+            .willSetStateTo("accepted"));
+        server.stubFor(post(urlEqualTo("/api/v1/quotes"))
+            .inScenario("rejected token")
+            .whenScenarioStateIs("accepted")
+            .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                .withBody("""
+                    {"customerGroup":"B2B_GOLD","currency":"EUR","lines":[],
+                     "totalNet":0,"totalVat":0,"totalGross":0,
+                     "quotedAt":"2026-10-01T10:15:30Z"}
+                    """)));
+
+        assertThatThrownBy(() -> gateway.quote(sampleRequest())).isInstanceOf(PricingUnavailableException.class);
+        assertThat(gateway.quote(sampleRequest()).currency()).isEqualTo("EUR");
+
+        server.verify(2, postRequestedFor(urlEqualTo("/token")));
     }
 
     private static QuoteRequest sampleRequest() {

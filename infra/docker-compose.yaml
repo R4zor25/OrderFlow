@@ -156,6 +156,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CATALOG_PRICING_BASE_URL: http://catalog-pricing-service:8081
       ORDER_JWT_JWK_SET_URI: http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs
+      ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET:?Set ORDER_SERVICE_CLIENT_SECRET in infra/.env}
+      ORDER_TOKEN_URI: http://keycloak:8080/realms/orderflow/protocol/openid-connect/token
     depends_on:
       postgres:
         condition: service_healthy

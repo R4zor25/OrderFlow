@@ -5,6 +5,17 @@ spring:
         jwt:
           issuer-uri: ${ORDER_JWT_ISSUER_URI:http://localhost:8180/realms/orderflow}
           jwk-set-uri: ${ORDER_JWT_JWK_SET_URI:http://localhost:8180/realms/orderflow/protocol/openid-connect/certs}
+      client:
+        registration:
+          catalog-pricing:
+            provider: keycloak
+            client-id: order-service
+            client-secret: ${ORDER_SERVICE_CLIENT_SECRET:}
+            authorization-grant-type: client_credentials
+            scope: pricing.quote
+        provider:
+          keycloak:
+            token-uri: ${ORDER_TOKEN_URI:http://localhost:8180/realms/orderflow/protocol/openid-connect/token}
   threads:
     virtual:
       enabled: true

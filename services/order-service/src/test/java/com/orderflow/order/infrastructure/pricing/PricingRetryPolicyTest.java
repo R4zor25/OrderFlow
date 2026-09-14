@@ -6,7 +6,10 @@ import java.net.http.HttpTimeoutException;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,5 +59,14 @@ class PricingRetryPolicyTest {
     void doesNotRetryUnclassifiedFailure() {
         assertThat(PricingRetryPolicy.isRetryable(new IllegalStateException("Unexpected failure")))
             .isFalse();
+    }
+
+    @Test
+    void doesNotRetryTokenAcquisitionFailure() {
+        var failure = new PricingUnavailableException("Pricing credentials unavailable",
+            new OAuth2AuthorizationException(new OAuth2Error("invalid_token_response"),
+                new ResourceAccessException("down", new ConnectException("refused"))));
+
+        assertThat(PricingRetryPolicy.isRetryable(failure)).isFalse();
     }
 }

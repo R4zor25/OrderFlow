@@ -4,6 +4,7 @@ import java.net.ConnectException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.web.client.RestClientResponseException;
 
 public final class PricingRetryPolicy {
@@ -16,6 +17,9 @@ public final class PricingRetryPolicy {
             return false;
         }
         for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof OAuth2AuthorizationException) {
+                return false;
+            }
             if (cause instanceof RestClientResponseException response) {
                 return response.getStatusCode().is5xxServerError();
             }

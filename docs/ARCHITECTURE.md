@@ -168,7 +168,7 @@ Place-order flow:
 
 1. Authenticate the customer from the JWT; `customerId` comes from the `customer_id` claim, not the request body. Validate the request (Bean Validation).
 2. Idempotency: `SET idem:{customerId}:{key} IN_PROGRESS NX EX 86400` in Redis. If the key exists with a stored result, return the same response. If it exists with a different request hash, return 422. If `IN_PROGRESS`, return 409.
-3. Call catalog-pricing `POST /api/v1/quotes` through the HTTP interface client. Timeouts: connect 1 s, read 2 s. Retry: 2 attempts with backoff on connect errors and 5xx. Circuit breaker around it; when open, respond `503` ProblemDetail with `Retry-After`.
+3. Call catalog-pricing `POST /api/v1/quotes` through the HTTP interface client. Timeouts: connect 1 s, read 2 s. Retry: 2 attempts with backoff on connect errors and 5xx. Circuit breaker around it; when open, respond `503` ProblemDetail with `Retry-After`. The call carries an OAuth2 client-credentials token of the order-service client (scope pricing.quote), cached and refreshed by Spring Security; the token request uses the same connect and read timeouts. Token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
 4. In one DB transaction: insert order + lines with status `PENDING`, insert `OrderPlaced` into `outbox_event`.
 5. Store the result under the idempotency key.
 
@@ -345,6 +345,7 @@ Security:
 - The issuer is `http://localhost:8180/realms/orderflow`; inside Compose the service reads the signing keys from the internal address `http://keycloak:8080/...`, so the issuer claim and the key endpoint differ on purpose.
 - Missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role returns 403 (`/problems/forbidden`).
 - A customer asking for another customer's order gets 404 (`/problems/order-not-found`), so existence is not revealed; listing with another customer's `customerId` is 403. Admins can read and cancel any order but cannot place one.
+- The call carries an OAuth2 client-credentials token of the order-service client (scope pricing.quote), cached and refreshed by Spring Security; token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
 - The password grant is a local demo compromise; it is not enabled for production use.
 
 Observability:

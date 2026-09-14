@@ -5,6 +5,17 @@ spring:
         jwt:
           issuer-uri: ${ORDER_JWT_ISSUER_URI}
           jwk-set-uri: ${ORDER_JWT_JWK_SET_URI}
+      client:
+        registration:
+          catalog-pricing:
+            provider: keycloak
+            client-id: order-service
+            client-secret: ${ORDER_SERVICE_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            scope: pricing.quote
+        provider:
+          keycloak:
+            token-uri: ${ORDER_TOKEN_URI}
   datasource:
     url: ${ORDER_DB_URL}
     username: ${ORDER_DB_USERNAME}
