@@ -85,6 +85,15 @@ Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, 
 
 The PUT example above changes the local seed price for `CHAIR-001`. `PUT /api/v1/products/{sku}/prices` replaces the full price-tier list for one customer group and SKU. An empty `tiers` array clears that group's tiers. A successful update returns 204 and invalidates the corresponding Redis cache entry after the database transaction commits. Repeating a quote for the same group and SKU reads its tiers from Redis; cache entries expire after 10 minutes. The `local` profile connects to Redis at `localhost:6379`; the `aws` profile reads `CATALOG_REDIS_HOST` and optional `CATALOG_REDIS_PORT` (default 6379).
 
+### Local identity provider
+
+Compose starts Keycloak at `http://localhost:8180` with the `orderflow` realm imported from
+`infra/keycloak/orderflow-realm.json`. Add the four Keycloak variables from `infra/.env.example`
+to your existing `infra/.env`; Compose refuses to start without them. Demo users `consumer.one`,
+`consumer.two`, `standard` and `gold` map to the four seeded customers; `admin` administers the
+catalog. All use `DEMO_USER_PASSWORD`. The realm is re-imported on every start, so changes made
+in the Keycloak console are not kept.
+
 ## Order service
 
 The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. `POST /api/v1/orders` accepts an `Idempotency-Key` header and creates a priced `PENDING` order with HTTP 202. `GET /api/v1/orders/{id}` and `GET /api/v1/orders` provide reads; `POST /api/v1/orders/{id}/cancel` cancels an eligible order. Inventory result events confirm or reject pending orders, and cancellation events release reservations.

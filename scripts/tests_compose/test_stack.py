@@ -35,9 +35,13 @@ class ComposeStackTest(unittest.TestCase):
         self.env.pop('COMPOSE_PROFILES', None)
         self.password = 'test-' + uuid.uuid4().hex
         envfile = self.export / 'test.env'
-        envfile.write_text('POSTGRES_PASSWORD=' + self.password + '\n')
+        envfile.write_text('POSTGRES_PASSWORD=' + self.password + '\n'
+                           'KC_BOOTSTRAP_ADMIN_USERNAME=bootstrap\n'
+                           'KC_BOOTSTRAP_ADMIN_PASSWORD=bootstrap-' + uuid.uuid4().hex + '\n'
+                           'ORDER_SERVICE_CLIENT_SECRET=secret-' + uuid.uuid4().hex + '\n'
+                           'DEMO_USER_PASSWORD=password-test\n')
         override = self.export / 'ports.yaml'
-        ports = {'postgres': [5432], 'redis': [6379], 'kafka': [], 'kafka-ui': [8080], 'mailpit': [8025]}
+        ports = {'postgres': [5432], 'redis': [6379], 'kafka': [], 'kafka-ui': [8080], 'mailpit': [8025], 'keycloak': [8080]}
         ports.update({service: [port] for service, port in APPLICATIONS.items()})
         override.write_text('services:\n' + ''.join(
             f'  {service}:\n    ports: !override ' + json.dumps([f'127.0.0.1::{port}' for port in numbers]) + '\n'

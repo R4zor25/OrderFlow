@@ -91,6 +91,30 @@ services:
       timeout: 3s
       retries: 5
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?Set KC_BOOTSTRAP_ADMIN_USERNAME in infra/.env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?Set KC_BOOTSTRAP_ADMIN_PASSWORD in infra/.env}
+      ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET:?Set ORDER_SERVICE_CLIENT_SECRET in infra/.env}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:?Set DEMO_USER_PASSWORD in infra/.env}
+      KC_HEALTH_ENABLED: "true"
+      # Tokens requested from the host and from containers must carry the same issuer.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./keycloak/orderflow-realm.json:/opt/keycloak/data/import/orderflow-realm.json:ro
+    healthcheck:
+      # The Keycloak image has no curl or wget; bash reads the management endpoint directly.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
   catalog-pricing-service:
     build:
       context: ../services/catalog-pricing-service
