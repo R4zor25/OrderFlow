@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwtConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwts;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +37,7 @@ import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import({PostgresTestConfiguration.class, RedisTestConfiguration.class,
-    CatalogVirtualThreadsIntegrationTest.ThreadProbeConfiguration.class})
+    TestJwtConfiguration.class, CatalogVirtualThreadsIntegrationTest.ThreadProbeConfiguration.class})
 class CatalogVirtualThreadsIntegrationTest {
 
     private final Environment environment;
@@ -55,7 +57,7 @@ class CatalogVirtualThreadsIntegrationTest {
     @Test
     void servesHttpRequestsOnVirtualThreads() throws Exception {
         try (var client = HttpClient.newHttpClient()) {
-            var response = get(client, "/test/thread");
+            var response = get(client, "/test/thread", TestJwts.withRoles("ADMIN"));
             assertThat(response.statusCode()).isEqualTo(200);
             assertThat(response.body()).isEqualTo("true");
         }
@@ -114,9 +116,17 @@ class CatalogVirtualThreadsIntegrationTest {
     }
 
     private HttpResponse<String> get(HttpClient client, String path) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create("http://localhost:"
+        return get(client, path, null);
+    }
+
+    private HttpResponse<String> get(HttpClient client, String path, String token) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://localhost:"
                 + environment.getProperty("local.server.port", Integer.class) + path))
-            .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString());
+            .timeout(Duration.ofSeconds(5));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

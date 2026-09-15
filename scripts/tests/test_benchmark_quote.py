@@ -49,11 +49,25 @@ class WarmupMeasurementTest(unittest.TestCase):
                                   seconds=10, request_timeout=5)
         from tempfile import TemporaryDirectory
         with TemporaryDirectory() as directory, \
-             patch.object(benchmark_quote, 'command', return_value='127.0.0.1:12345'), \
+             patch.object(benchmark_quote, 'command', return_value='127.0.0.1:12345') as command, \
              patch.object(benchmark_quote, 'wait_healthy'), \
              patch.object(benchmark_quote, 'pool_snapshot', return_value={'max': 5, 'active': 0, 'idle': 5}), \
-             patch.object(benchmark_quote, 'load', side_effect=[(warmup, []), (measured, [0.01])]):
-            return benchmark_quote.measure(False, 5, 1, 'test', 'image', Path(directory), options, [])
+             patch.object(benchmark_quote, 'keycloak_token', side_effect=['warmup-token', 'measured-token']) as token, \
+             patch.object(benchmark_quote, 'load', side_effect=[(warmup, []), (measured, [0.01])]) as load:
+            self.command, self.token, self.load = command, token, load
+            return benchmark_quote.measure(False, 5, 1, 'test', 'image', Path(directory), options, [],
+                                           'http://127.0.0.1:50000')
+
+    def test_fetches_fresh_service_token_for_each_load_phase(self):
+        self.run_measurement(summarize_requests([0.1], {}, 10))
+        self.assertEqual(self.token.call_count, 2)
+        for call in self.token.call_args_list:
+            self.assertEqual(call.args, ('http://127.0.0.1:50000', benchmark_quote.SERVICE_GRANT))
+        self.assertEqual([call.args[1] for call in self.load.call_args_list], ['warmup-token', 'measured-token'])
+        create = next(call.args for call in self.command.call_args_list if call.args[:2] == ('docker', 'create'))
+        self.assertIn('CATALOG_JWT_JWK_SET_URI=http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs',
+                      create)
+        self.assertIn('CATALOG_JWT_ISSUER_URI=http://localhost:8180/realms/orderflow', create)
 
     def test_warmup_overload_errors_are_retained_without_discarding_measured_phase(self):
         warmup = summarize_requests([0.1], {'HTTP 500': 2}, 10)
@@ -64,6 +78,20 @@ class WarmupMeasurementTest(unittest.TestCase):
     def test_no_successful_warmup_aborts_measurement(self):
         with self.assertRaises(RuntimeError):
             self.run_measurement(summarize_requests([], {'HTTP 500': 2}, 10))
+
+
+class OptionValidationTest(unittest.TestCase):
+    def test_rejects_load_phase_longer_than_access_token_lifetime(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as directory, \
+             patch.object(sys, 'argv', ['benchmark_quote.py', '--seconds', '296',
+                                        '--output', str(Path(directory) / 'out')]), \
+             patch.object(benchmark_quote, 'jar_path', return_value=Path(__file__)), \
+             patch.object(benchmark_quote, 'command', side_effect=AssertionError('benchmark started')), \
+             patch.object(benchmark_quote, 'cleanup_resources'), \
+             patch('sys.stderr'), self.assertRaises(SystemExit) as exit:
+            benchmark_quote.main()
+        self.assertEqual(exit.exception.code, 2)
 
 
 class SamplerTimingTest(unittest.TestCase):
@@ -78,11 +106,12 @@ class SamplerTimingTest(unittest.TestCase):
                 clock[0] = 20.0
             def is_alive(self):
                 return False
+        sent_headers = []
         class Connection:
             def __init__(self, *args, **kwargs):
                 pass
-            def request(self, *args):
-                pass
+            def request(self, method, path, body, headers):
+                sent_headers.append(headers)
             def getresponse(self):
                 return self
             status = 200
@@ -97,6 +126,7 @@ class SamplerTimingTest(unittest.TestCase):
         with patch.object(benchmark_quote, "threading", local_threading), \
              patch.object(benchmark_quote, "time", local_time), \
              patch.object(benchmark_quote.http.client, "HTTPConnection", Connection):
-            result, _ = benchmark_quote.load("http://localhost:8081", 1, 1, 5, sample_pool=True)
+            result, _ = benchmark_quote.load("http://localhost:8081", "service-token", 1, 1, 5, sample_pool=True)
+        self.assertEqual(sent_headers[0]["Authorization"], "Bearer service-token")
         self.assertEqual(result["elapsed_seconds"], 2.0)
         self.assertEqual(result["success_rps"], 0.5)

@@ -18,10 +18,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from benchmark_services import ROOT, cleanup_resources, command, http_get, jar_path, wait_healthy, interrupt
+from benchmark_services import (ROOT, SERVICE_GRANT, cleanup_resources, command, http_get, interrupt, jar_path,
+                                jwt_env, keycloak_token, wait_healthy)
 
 VARIANTS = ((False, 5), (True, 5), (False, 50), (True, 50))
 JAVA_FLAGS = ('-Xms128m', '-Xmx256m', '-XX:ActiveProcessorCount=1')
+# accessTokenLifespan of infra/keycloak/orderflow-realm.json; one token serves a whole load phase.
+TOKEN_LIFETIME_SECONDS = 300
 REQUEST = json.dumps({'customerGroup': 'B2B_GOLD',
                       'lines': [{'sku': 'CHAIR-001', 'quantity': 25}]}).encode()
 
@@ -67,7 +70,7 @@ def pool_snapshot(base_url):
     return values
 
 
-def load(base_url, concurrency, seconds, timeout, sample_pool=False):
+def load(base_url, token, concurrency, seconds, timeout, sample_pool=False):
     target = urlsplit(base_url)
     start = threading.Barrier(concurrency + 1)
     deadline = [0.0]
@@ -94,7 +97,7 @@ def load(base_url, concurrency, seconds, timeout, sample_pool=False):
                 began = time.perf_counter()
                 try:
                     connection.request('POST', '/api/v1/quotes', REQUEST,
-                                       {'Content-Type': 'application/json'})
+                                       {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token})
                     response = connection.getresponse()
                     body = response.read()
                     if response.status != 200:
@@ -135,7 +138,7 @@ def load(base_url, concurrency, seconds, timeout, sample_pool=False):
     return result, latencies
 
 
-def measure(virtual, pool_size, run, project, image, output, options, containers):
+def measure(virtual, pool_size, run, project, image, output, options, containers, keycloak_url):
     variant = ('virtual' if virtual else 'platform') + '-pool' + str(pool_size)
     name = f'{project}-{variant}-{run}'
     containers.append(name)
@@ -150,7 +153,7 @@ def measure(virtual, pool_size, run, project, image, output, options, containers
            'SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE': str(pool_size),
            'SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE': str(pool_size),
            'MANAGEMENT_TRACING_SAMPLING_PROBABILITY': '0.1',
-           'LOGGING_LEVEL_COM_ORDERFLOW': 'WARN'}
+           'LOGGING_LEVEL_COM_ORDERFLOW': 'WARN', **jwt_env('CATALOG')}
     for key, value in env.items():
         args.extend(['-e', f'{key}={value}'])
     command(*args, image, *JAVA_FLAGS, '-jar', '/app.jar')
@@ -166,13 +169,14 @@ def measure(virtual, pool_size, run, project, image, output, options, containers
             if time.monotonic() >= ready_deadline:
                 raise TimeoutError(f'Pool {pool_size} did not become ready: {initial}')
             time.sleep(0.1)
-        warmup, _ = load(base_url, options.concurrency, options.warmup_seconds, options.request_timeout)
+        warmup, _ = load(base_url, keycloak_token(keycloak_url, SERVICE_GRANT), options.concurrency,
+                         options.warmup_seconds, options.request_timeout)
         if not warmup['successful_requests']:
             raise RuntimeError('No successful warm-up requests: ' + str(warmup['error_categories']))
         if warmup['errors']:
             print(f'{variant} run {run}: warm-up errors={warmup["error_categories"]}', flush=True)
-        result, latencies = load(base_url, options.concurrency, options.seconds,
-                                 options.request_timeout, sample_pool=True)
+        result, latencies = load(base_url, keycloak_token(keycloak_url, SERVICE_GRANT), options.concurrency,
+                                 options.seconds, options.request_timeout, sample_pool=True)
         result.update({'variant': variant, 'run': run, 'virtual_threads': virtual,
                        'pool_size': pool_size, 'warmup': warmup,
                        'max_active': max((s['active'] for s in result['pool_samples']), default=None),
@@ -225,6 +229,8 @@ def main():
     if (options.runs < 1 or options.concurrency < 1 or
             min(options.seconds, options.warmup_seconds, options.request_timeout, options.startup_timeout) <= 0):
         parser.error('All run counts and durations must be positive')
+    if max(options.seconds, options.warmup_seconds) + options.request_timeout >= TOKEN_LIFETIME_SECONDS:
+        parser.error(f'Each load phase plus request timeout must stay below the {TOKEN_LIFETIME_SECONDS}s token lifetime')
     jar = jar_path('catalog-pricing-service')
     if not jar.is_file():
         parser.error('Missing catalog JAR; run ./mvnw verify first')
@@ -254,13 +260,17 @@ def main():
                     'options': {k: str(v) if isinstance(v, Path) else v for k, v in vars(options).items()},
                     'load_model': 'closed-loop persistent HTTP connections from Mac Python threads',
                     'cache': 'price tiers warmed; product reads still query PostgreSQL',
-                    'tracing_root_sampling': 0.1, 'business_log_level': 'WARN'}
+                    'tracing_root_sampling': 0.1, 'business_log_level': 'WARN',
+                    'auth': 'order-service client-credentials token fetched before each load phase, outside '
+                            'timing; every quote request includes RS256 JWT validation'}
         (output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
-        command(*compose, 'up', '-d', '--wait', '--wait-timeout', '120', 'postgres', 'redis', timeout=240)
+        command(*compose, 'up', '-d', '--wait', '--wait-timeout', '120', 'postgres', 'redis', 'keycloak', timeout=240)
+        keycloak_url = 'http://' + command(*compose, 'port', 'keycloak', '8080')
         for run in range(1, options.runs + 1):
             offset = (run - 1) % len(VARIANTS)
             for virtual, pool_size in VARIANTS[offset:] + VARIANTS[:offset]:
-                result = measure(virtual, pool_size, run, project, image, output, options, containers)
+                result = measure(virtual, pool_size, run, project, image, output, options, containers,
+                                 keycloak_url)
                 results.append(result)
                 (output / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
         scalar_fields = ['variant', 'run', 'virtual_threads', 'pool_size', 'successful_requests', 'errors',

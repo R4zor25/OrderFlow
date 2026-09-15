@@ -16,15 +16,20 @@ The script runs `order-service`, `order-service` with lazy initialization, and
 The resolved image ID, repository digest, JVM version, JAR hashes and source commit
 are recorded. No native image or AOT build is used.
 
-A unique Compose project provides disposable PostgreSQL, Redis and Kafka without
-publishing their ports or accessing the local Compose stack. Its database uses a
+A unique Compose project provides disposable PostgreSQL, Redis, Kafka and Keycloak
+without accessing the local Compose stack. Only Keycloak is published, on an
+ephemeral loopback port, so the script can fetch tokens; it imports the normal
+`infra/keycloak/orderflow-realm.json` with throwaway benchmark-only secrets and
+keeps the local issuer `http://localhost:8180/realms/orderflow`. Its database uses a
 temporary filesystem and a benchmark-only password. Kafka consumption is enabled
 for both services; notification delivery uses LOG. There are no business events.
 One unmeasured run of each service prepares migrations and dependency caches.
 Each measured run starts a new JVM; variant order rotates across rounds.
 
-By default there are three runs per variant. After health becomes UP, the Spring
-service receives its first order-list request against an empty database. Both
+By default there are three runs per variant. After health becomes UP, the script
+fetches a CUSTOMER token (`standard` user, `orderflow-cli` password grant) outside
+any timed section, then the Spring service receives its first authenticated
+order-list request against an empty database. Both
 services receive 100 health requests, followed by a 30-second settling period and
 three memory samples. This is an idle-service measurement after a small HTTP
 warm-up, not a throughput test or a fully JIT-warmed production workload.
@@ -36,6 +41,8 @@ Metrics:
   Includes Docker/host overhead and polling; does not assert Kafka partition assignment.
 - `first_order_read_seconds`: first successful order-list request; only comparable
   between the Spring normal and lazy variants. Micronaut has no equivalent endpoint.
+  It includes server-side JWT validation and the first JWKS fetch from Keycloak,
+  but not the token request itself.
 - `rss_mib`: JVM PID 1 `VmRSS` from `/proc/1/status` (KiB converted to MiB).
 - `docker_memory_mib`: Docker CLI `MemUsage`, which on Linux excludes inactive file cache.
   This is container accounting, not process RSS or heap usage.
@@ -72,14 +79,20 @@ The second script compares four catalog configurations: platform/virtual threads
 each with a fixed pool of 5 or 50 connections. Application defaults remain 10.
 It uses the packaged catalog JAR, one resolved Java 25 runtime image, 1 CPU,
 768 MiB container memory and `-Xms128m -Xmx256m -XX:ActiveProcessorCount=1`.
-An isolated Compose project reuses the benchmark PostgreSQL/Redis definitions;
+An isolated Compose project reuses the benchmark PostgreSQL/Redis/Keycloak definitions;
 its overlay limits PostgreSQL to 1 CPU/512 MiB and Redis to 0.5 CPU/128 MiB.
 Kafka is not started. No normal local database, volume or fixed host port is used.
 
 The default is three rounds, with variant order rotated each round. Each case
 starts a fresh JVM, waits for readiness and the full configured pool, warms the
 real `POST /api/v1/quotes` workload for 10 seconds and measures for 10 seconds.
-The request uses B2B_GOLD and 25 units of CHAIR-001. The price-tier cache is warm;
+The request uses B2B_GOLD and 25 units of CHAIR-001 and carries an order-service
+client-credentials token (scope `pricing.quote`). A fresh token is fetched before
+each warm-up and measured phase, outside the timed interval; a phase plus the
+request timeout must stay below the realm's 300-second token lifetime. Every
+request therefore includes RS256 JWT validation, so results are not comparable
+with measurements taken before quotes required authentication. Keycloak is idle
+during the load phases. The price-tier cache is warm;
 products still come from PostgreSQL. Business INFO logs are disabled for every
 case to avoid per-request console overhead; root trace sampling is 10% for all.
 

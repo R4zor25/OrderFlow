@@ -48,7 +48,8 @@ class ServiceImageTest(unittest.TestCase):
         (self.output / (service + '-image.json')).write_text(json.dumps(info, indent=2))
         if not self.infrastructure_started:
             type(self).infrastructure_started = True
-            command(*self.compose, 'up', '-d', '--wait', '--wait-timeout', '120', timeout=240)
+            command(*self.compose, 'up', '-d', '--wait', '--wait-timeout', '120',
+                    'postgres', 'redis', 'kafka', timeout=240)
         name = self.project + '-' + service
         self.containers.append(name)
         spring = service != 'notification-service'

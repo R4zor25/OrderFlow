@@ -7,12 +7,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,7 +41,7 @@ class ProductWriteApiTest {
 
     @Test
     void createsProductAndReturnsLocation() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct()))
             .andExpect(status().isCreated())
@@ -54,7 +56,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsBlankSkuAsBadRequest() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct().replace("TEST-NEW-001", "  ")))
             .andExpect(status().isBadRequest())
@@ -65,7 +67,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsNonPositivePriceAsBadRequest() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct().replace("19.90", "0.00")))
             .andExpect(status().isBadRequest())
@@ -75,7 +77,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsSkuWithPathSeparator() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct().replace("TEST-NEW-001", "TEST/NEW")))
             .andExpect(status().isBadRequest())
@@ -91,7 +93,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsMalformedJsonAsBadRequest() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{invalid-json"))
             .andExpect(status().isBadRequest())
@@ -100,7 +102,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsDuplicateSkuAsConflict() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct().replace("TEST-NEW-001", "CHAIR-001")))
             .andExpect(status().isConflict())
@@ -110,7 +112,7 @@ class ProductWriteApiTest {
 
     @Test
     void rejectsVatRateOutsideDomainRange() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validProduct().replace("0.27", "1.50")))
             .andExpect(status().isUnprocessableContent())

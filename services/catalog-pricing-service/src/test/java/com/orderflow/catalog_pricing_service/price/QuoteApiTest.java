@@ -8,6 +8,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -48,7 +50,7 @@ class QuoteApiTest {
 
     @Test
     void coldCacheLoadsMultipleSkusInOneRepositoryCall() throws Exception {
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","lines":[
@@ -66,9 +68,9 @@ class QuoteApiTest {
         String request = """
             {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":25}]}
             """;
-        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(request))
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote"))).contentType(MediaType.APPLICATION_JSON).content(request))
             .andExpect(status().isOk());
-        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(request))
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote"))).contentType(MediaType.APPLICATION_JSON).content(request))
             .andExpect(status().isOk());
         verify(priceListEntryRepository, times(1))
             .findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection());
@@ -76,7 +78,7 @@ class QuoteApiTest {
 
     @Test
     void priceUpdateEvictsCachedTiers() throws Exception {
-        mvc.perform(post("/api/v1/products")
+        mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"sku":"CACHE-STEP10","name":"Cache test product","category":"TEST",
@@ -86,9 +88,9 @@ class QuoteApiTest {
         String quote = """
             {"customerGroup":"B2B_GOLD","lines":[{"sku":"CACHE-STEP10","quantity":1}]}
             """;
-        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote"))).contentType(MediaType.APPLICATION_JSON).content(quote))
             .andExpect(jsonPath("$.lines[0].unitPriceNet").value(100.00));
-        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices")
+        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","tiers":[
@@ -96,9 +98,9 @@ class QuoteApiTest {
                     ]}
                     """))
             .andExpect(status().isNoContent());
-        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote"))).contentType(MediaType.APPLICATION_JSON).content(quote))
             .andExpect(jsonPath("$.lines[0].unitPriceNet").value(80.00));
-        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices")
+        mvc.perform(put("/api/v1/products/CACHE-STEP10/prices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","tiers":[
@@ -106,13 +108,13 @@ class QuoteApiTest {
                     ]}
                     """))
             .andExpect(status().isNoContent());
-        mvc.perform(post("/api/v1/quotes").contentType(MediaType.APPLICATION_JSON).content(quote))
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote"))).contentType(MediaType.APPLICATION_JSON).content(quote))
             .andExpect(jsonPath("$.lines[0].unitPriceNet").value(70.00));
     }
 
     @Test
     void rejectsOverlappingPriceTiersWithoutChangingExistingPrices() throws Exception {
-        mvc.perform(put("/api/v1/products/CHAIR-001/prices")
+        mvc.perform(put("/api/v1/products/CHAIR-001/prices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","tiers":[
@@ -122,7 +124,7 @@ class QuoteApiTest {
                     """))
             .andExpect(status().isUnprocessableContent())
             .andExpect(jsonPath("$.type").value("/problems/invalid-price-list"));
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":1}]}
@@ -132,7 +134,7 @@ class QuoteApiTest {
 
     @Test
     void quotesGoldTierWithNetAndVat() throws Exception {
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":25}]}
@@ -153,7 +155,7 @@ class QuoteApiTest {
 
     @Test
     void quotesB2cListPricesWithGrossAmountsForMultipleLines() throws Exception {
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2C","lines":[
@@ -174,7 +176,7 @@ class QuoteApiTest {
 
     @Test
     void reportsEveryUnknownSkuAsUnprocessableContent() throws Exception {
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2B_STANDARD","lines":[
@@ -191,7 +193,7 @@ class QuoteApiTest {
 
     @Test
     void rejectsInvalidQuoteRequestBeforePricing() throws Exception {
-        mvc.perform(post("/api/v1/quotes")
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"customerGroup":"B2C","lines":[{"sku":"CHAIR-001","quantity":0}]}

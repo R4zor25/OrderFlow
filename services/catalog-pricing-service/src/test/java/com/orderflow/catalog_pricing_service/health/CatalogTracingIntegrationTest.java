@@ -10,6 +10,8 @@ import java.util.List;
 import com.orderflow.catalog_pricing_service.CatalogPricingServiceApplication;
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwtConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -30,7 +32,7 @@ class CatalogTracingIntegrationTest {
     void quoteLogsContinueIncomingTraceAndRejectMalformedContextWithoutFailingRequest(CapturedOutput output)
             throws Exception {
         try (var context = new SpringApplicationBuilder(CatalogPricingServiceApplication.class,
-                PostgresTestConfiguration.class, RedisTestConfiguration.class)
+                PostgresTestConfiguration.class, RedisTestConfiguration.class, TestJwtConfiguration.class)
                 .run("--server.port=0", "--management.tracing.sampling.probability=1")) {
             int port = context.getEnvironment().getProperty("local.server.port", Integer.class);
             var json = context.getBean(ObjectMapper.class);
@@ -57,6 +59,7 @@ class CatalogTracingIntegrationTest {
             .timeout(Duration.ofSeconds(10))
             .header("Content-Type", "application/json")
             .header("traceparent", traceparent)
+            .header("Authorization", "Bearer " + TestJwts.withScope("pricing.quote"))
             .POST(HttpRequest.BodyPublishers.ofString("""
                 {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":1}]}
                 """))

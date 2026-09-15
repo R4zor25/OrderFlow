@@ -29,16 +29,17 @@ docker compose --env-file infra/.env -f infra/docker-compose.yaml up --build -d 
 docker compose --env-file infra/.env -f infra/docker-compose.yaml ps
 ```
 
-Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI and Mailpit. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. Each application has 512 MiB memory, one CPU and a 30-second stop grace period. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
+Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. Each application has 512 MiB memory, one CPU and a 30-second stop grace period. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
 
 | Endpoint on the Mac | Address |
 |---|---|
 | Catalog / order / inventory / notification | `localhost:8081` / `:8082` / `:8083` / `:8084` |
 | Kafka UI | `http://localhost:8085` |
 | Mailpit inbox | `http://localhost:8025` |
+| Keycloak (issuer, token endpoint, console) | `http://localhost:8180` |
 | PostgreSQL / Redis / Kafka host listener | `localhost:5433` / `:6379` / `:9094` |
 
-All published ports bind to loopback. Inside Compose, applications connect to `postgres:5432`, `redis:6379`, `kafka:9092`, `catalog-pricing-service:8081` and `mailpit:1025` instead of host addresses.
+All published ports bind to loopback. Inside Compose, applications connect to `postgres:5432`, `redis:6379`, `kafka:9092`, `catalog-pricing-service:8081`, `mailpit:1025` and `keycloak:8080` (signing keys and tokens) instead of host addresses.
 
 ### Run applications in IntelliJ instead
 
@@ -46,10 +47,10 @@ To use Java processes on the Mac, stop any Compose application containers first 
 
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.yaml stop catalog-pricing-service order-service inventory-service notification-service
-docker compose --env-file infra/.env -f infra/docker-compose.yaml up -d --wait postgres redis kafka kafka-ui mailpit
+docker compose --env-file infra/.env -f infra/docker-compose.yaml up -d --wait postgres redis kafka kafka-ui mailpit keycloak
 ```
 
-Pass the same `POSTGRES_PASSWORD` value to the IntelliJ run configurations and select the Spring `local` profile or Micronaut `local` environment. Compose does not supply variables to Java processes on the Mac. For example, with that variable already set in your terminal:
+Pass the same `POSTGRES_PASSWORD` value to the IntelliJ run configurations and select the Spring `local` profile or Micronaut `local` environment. order-service additionally needs `ORDER_SERVICE_CLIENT_SECRET` from `infra/.env` for its pricing calls; without it the service still starts, but the token request is rejected and `POST /api/v1/orders` returns 503 `/problems/pricing-unavailable` (the gateway reports "Pricing credentials unavailable"). The curl examples below read `DEMO_USER_PASSWORD` from the same file. Compose does not supply variables to Java processes on the Mac. For example, with that variable already set in your terminal:
 
 ```bash
 cd services/catalog-pricing-service
@@ -62,18 +63,18 @@ In another terminal, try the endpoints:
 curl http://localhost:8081/actuator/health
 curl 'http://localhost:8081/api/v1/products?category=FURNITURE&page=0&size=3'
 curl http://localhost:8081/api/v1/products/CHAIR-001
+ADMIN_TOKEN=$(curl -s -d grant_type=password -d client_id=orderflow-cli -d username=admin \
+  --data-urlencode "password=$DEMO_USER_PASSWORD" \
+  http://localhost:8180/realms/orderflow/protocol/openid-connect/token | jq -r .access_token)
 curl -i -X POST http://localhost:8081/api/v1/products \
-  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"sku":"TEST-NEW-001","name":"New Test Product","category":"OFFICE","listPriceNet":19.90,"vatRate":0.27}'
-curl -i -X POST http://localhost:8081/api/v1/quotes \
-  -H 'Content-Type: application/json' \
-  -d '{"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":25}]}'
 curl -i -X PUT http://localhost:8081/api/v1/products/CHAIR-001/prices \
-  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"customerGroup":"B2B_GOLD","tiers":[{"minQty":1,"unitPriceNet":84.90,"validFrom":"2020-01-01"}]}'
 ```
 
-The expected health status is `UP`. For a Java process on the Mac, the local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. In Compose, runtime environment variables override this with `postgres:5432`. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
+Product reads are public. Product creation and price replacement need an `ADMIN` bearer token from the local Keycloak (see Local identity provider); the Keycloak stack from Compose must be running. The `aws` profile reads `CATALOG_JWT_ISSUER_URI` and `CATALOG_JWT_JWK_SET_URI`. The expected health status is `UP`. For a Java process on the Mac, the local profile connects to `localhost:5433`, which Compose forwards to PostgreSQL on port 5432. In Compose, runtime environment variables override this with `postgres:5432`. The `aws` profile reads its database URL, username and password from `CATALOG_DB_URL`, `CATALOG_DB_USERNAME` and `CATALOG_DB_PASSWORD`.
 
 On startup, Flyway applies `V1__catalog.sql` and `V2__seed.sql` once. The `catalog` schema then contains 20 sample products, three customer groups and 12 B2B price tiers. Applied versions are recorded in `catalog.flyway_schema_history`.
 
@@ -81,7 +82,7 @@ The product list accepts optional `category`, `page` (zero-based, default 0) and
 
 Product creation requires `sku`, `name`, `category`, a positive `listPriceNet`, and a `vatRate` between 0 and 1. A successful request returns 201 with a `Location` header. Invalid request fields return 400, an existing SKU returns 409, and an out-of-range VAT rate returns 422. Errors use RFC 9457 problem details.
 
-`POST /api/v1/quotes` accepts a customer group and one or more SKU/quantity lines. It returns EUR prices using the highest applicable quantity tier, or the product list price if no tier applies. B2C lines show gross amounts; B2B lines show net and VAT separately. The response always includes net, VAT, and gross totals. Invalid input returns 400. Unknown or inactive SKUs return 422 with every missing SKU in the `skus` array. Quoting writes no data.
+`POST /api/v1/quotes` accepts a customer group and one or more SKU/quantity lines. It returns EUR prices using the highest applicable quantity tier, or the product list price if no tier applies. B2C lines show gross amounts; B2B lines show net and VAT separately. The response always includes net, VAT, and gross totals. Invalid input returns 400. Unknown or inactive SKUs return 422 with every missing SKU in the `skus` array. Quoting writes no data. The quote endpoint is internal: it is callable only with the order-service client-credentials token (scope `pricing.quote`), so there is no direct curl example.
 
 The PUT example above changes the local seed price for `CHAIR-001`. `PUT /api/v1/products/{sku}/prices` replaces the full price-tier list for one customer group and SKU. An empty `tiers` array clears that group's tiers. A successful update returns 204 and invalidates the corresponding Redis cache entry after the database transaction commits. Repeating a quote for the same group and SKU reads its tiers from Redis; cache entries expire after 10 minutes. The `local` profile connects to Redis at `localhost:6379`; the `aws` profile reads `CATALOG_REDIS_HOST` and optional `CATALOG_REDIS_PORT` (default 6379).
 
@@ -91,21 +92,22 @@ Compose starts Keycloak at `http://localhost:8180` with the `orderflow` realm im
 `infra/keycloak/orderflow-realm.json`. Add the four Keycloak variables from `infra/.env.example`
 to your existing `infra/.env`; Compose refuses to start without them. Demo users `consumer.one`,
 `consumer.two`, `standard` and `gold` map to the four seeded customers; `admin` administers the
-catalog. All use `DEMO_USER_PASSWORD`. The realm is re-imported on every start, so changes made
-in the Keycloak console are not kept.
+catalog. All use `DEMO_USER_PASSWORD`. Keycloak keeps its development database inside the container, so
+a restart keeps console changes; only recreating the container (for example `down` then `up`, or
+`up --force-recreate keycloak`) re-imports the realm file and discards them.
 
 ## Order service
 
 The `order-service` is a separate Spring Boot application on port 8082. It uses the `orders` PostgreSQL schema; Flyway creates `customer`, `orders`, `order_line`, `outbox_event`, and `processed_event` and seeds four sample customers. `POST /api/v1/orders` accepts an `Idempotency-Key` header and creates a priced `PENDING` order with HTTP 202. `GET /api/v1/orders/{id}` and `GET /api/v1/orders` provide reads; `POST /api/v1/orders/{id}/cancel` cancels an eligible order. Inventory result events confirm or reject pending orders, and cancellation events release reservations.
 
-The full Compose command already starts this service. For the IntelliJ/host workflow described above, with dependency containers running and `POSTGRES_PASSWORD` set to the value in `infra/.env`, start it separately:
+The full Compose command already starts this service. For the IntelliJ/host workflow described above, with dependency containers running and `POSTGRES_PASSWORD` and `ORDER_SERVICE_CLIENT_SECRET` set to the values in `infra/.env`, start it separately:
 
 ```bash
 cd services/order-service
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`, plus `ORDER_JWT_ISSUER_URI` and `ORDER_JWT_JWK_SET_URI`.
+Then check `http://localhost:8082/actuator/health`. The `aws` profile expects `ORDER_DB_URL`, `ORDER_DB_USERNAME`, and `ORDER_DB_PASSWORD`, plus `ORDER_JWT_ISSUER_URI`, `ORDER_JWT_JWK_SET_URI`, `ORDER_TOKEN_URI` and `ORDER_SERVICE_CLIENT_SECRET`.
 
 Order endpoints need a bearer token from the local Keycloak. Request one with the demo user's password grant and place an order; the customer comes from the token, not the request body:
 
@@ -197,7 +199,7 @@ Ports 8082 and 8083 provide the same measurements for order and inventory. Catal
 
 Connection limits are per instance, not a global limit across the deployment. Budget the sum of all service replicas' pool maxima plus migration, monitoring and administrative connections against the database limit, allowing operational headroom.
 
-[`scripts/benchmark_quote.py`](scripts/benchmark_quote.py) compares the real quote endpoint using platform/virtual threads and pools of 5/50 under identical resource limits. The benchmark overrides are temporary; the application default remains 10. See [benchmark instructions](scripts/README.md#quote-throughput-and-pool-pressure). Local measurements describe this workload and machine; they do not establish a universally optimal pool size.
+[`scripts/benchmark_quote.py`](scripts/benchmark_quote.py) compares the real quote endpoint using platform/virtual threads and pools of 5/50 under identical resource limits. Requests carry a client-credentials token from a disposable Keycloak in the benchmark's own Compose project. The benchmark overrides are temporary; the application default remains 10. See [benchmark instructions](scripts/README.md#quote-throughput-and-pool-pressure). Local measurements describe this workload and machine; they do not establish a universally optimal pool size.
 
 ## Container images
 
@@ -296,6 +298,9 @@ Runtime is disabled by default until discovery endpoints and SHA-tagged images
 exist. Local mock-provider tests and the notification AWS-profile integration
 check do not prove an AWS deployment. Live plan/apply, image publication and cloud
 traffic remain unverified; GitHub OIDC/deployment automation is implemented and locally checked.
+The AWS/ECS runtime is not supported until the AWS identity-provider step: the `aws` profiles
+require `*_JWT_ISSUER_URI`, `*_JWT_JWK_SET_URI`, `ORDER_TOKEN_URI` and `ORDER_SERVICE_CLIENT_SECRET`,
+which Terraform does not provide yet.
 
 ## Manual ECS release
 

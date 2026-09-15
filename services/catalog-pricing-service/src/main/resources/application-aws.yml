@@ -7,6 +7,12 @@ spring:
     redis:
       host: ${CATALOG_REDIS_HOST}
       port: ${CATALOG_REDIS_PORT:6379}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${CATALOG_JWT_ISSUER_URI}
+          jwk-set-uri: ${CATALOG_JWT_JWK_SET_URI}
 
 management:
   endpoint:

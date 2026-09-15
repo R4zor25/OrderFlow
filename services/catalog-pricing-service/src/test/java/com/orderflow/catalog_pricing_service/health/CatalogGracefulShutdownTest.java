@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 import com.orderflow.catalog_pricing_service.CatalogPricingServiceApplication;
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwtConfiguration;
+import com.orderflow.catalog_pricing_service.TestJwts;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.availability.ApplicationAvailability;
 import org.springframework.boot.availability.ReadinessState;
@@ -32,7 +34,7 @@ class CatalogGracefulShutdownTest {
     void gracefulShutdownWaitsForAnActiveHttpRequestToComplete() throws Exception {
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(
                 CatalogPricingServiceApplication.class, PostgresTestConfiguration.class,
-                RedisTestConfiguration.class, RequestConfiguration.class).run("--server.port=0")) {
+                RedisTestConfiguration.class, TestJwtConfiguration.class, RequestConfiguration.class).run("--server.port=0")) {
             int port = context.getEnvironment().getProperty("local.server.port", Integer.class);
             InFlightRequest request = context.getBean(InFlightRequest.class);
             assertThat(context.getEnvironment().getProperty("server.shutdown")).isEqualTo("graceful");
@@ -40,7 +42,8 @@ class CatalogGracefulShutdownTest {
                 .isEqualTo("20s");
             ApplicationAvailability availability = context.getBean(ApplicationAvailability.class);
             CompletableFuture<HttpResponse<String>> response = http.sendAsync(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/test/in-flight")).timeout(Duration.ofSeconds(15)).build(),
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/test/in-flight")).timeout(Duration.ofSeconds(15))
+                    .header("Authorization", "Bearer " + TestJwts.withRoles("ADMIN")).build(),
                 HttpResponse.BodyHandlers.ofString());
             assertThat(request.started.await(5, TimeUnit.SECONDS)).isTrue();
             CompletableFuture<Void> shutdown = CompletableFuture.runAsync(context::close);

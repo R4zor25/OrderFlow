@@ -13,6 +13,7 @@ import statistics
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ('spring', 'spring-lazy', 'micronaut')
 JAVA_FLAGS = ('-Xms128m', '-Xmx256m', '-XX:ActiveProcessorCount=1')
+BENCHMARK_SECRET = 'benchmark-only'
+# Must match KC_HOSTNAME in benchmark-compose.yaml; the published Keycloak port itself is ephemeral.
+KEYCLOAK_ISSUER = 'http://localhost:8180/realms/orderflow'
+KEYCLOAK_INTERNAL = 'http://keycloak:8080/realms/orderflow'
+TOKEN_PATH = '/realms/orderflow/protocol/openid-connect/token'
+CUSTOMER_GRANT = {'grant_type': 'password', 'client_id': 'orderflow-cli',
+                  'username': 'standard', 'password': BENCHMARK_SECRET}
+SERVICE_GRANT = {'grant_type': 'client_credentials', 'client_id': 'order-service',
+                 'client_secret': BENCHMARK_SECRET}
 
 
 def startup_seconds(log, framework):
@@ -55,13 +65,32 @@ def command(*args, timeout=120, include_stderr=False):
     return (result.stdout + ('\n' + result.stderr if include_stderr else '')).strip()
 
 
-def http_get(url, timeout=2):
+def http_get(url, timeout=2, token=None):
+    request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token} if token else {})
     started = time.perf_counter()
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         body = response.read()
         if response.status != 200:
             raise ValueError(f'HTTP {response.status} from {url}')
     return time.perf_counter() - started, body
+
+
+def keycloak_token(keycloak_url, grant, timeout=10):
+    request = urllib.request.Request(keycloak_url + TOKEN_PATH, data=urllib.parse.urlencode(grant).encode(),
+                                     headers={'Content-Type': 'application/x-www-form-urlencoded'})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            token = json.loads(response.read()).get('access_token')
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f'Keycloak token request failed with HTTP {error.code}: {error.read()[:500]!r}') from error
+    if not token:
+        raise ValueError('Keycloak returned no access token')
+    return token
+
+
+def jwt_env(prefix):
+    return {prefix + '_JWT_ISSUER_URI': KEYCLOAK_ISSUER,
+            prefix + '_JWT_JWK_SET_URI': KEYCLOAK_INTERNAL + '/protocol/openid-connect/certs'}
 
 
 def wait_healthy(name, url, timeout):
@@ -83,7 +112,7 @@ def jar_path(service):
     return ROOT / 'services' / service / 'target' / f'{service}-0.0.1-SNAPSHOT.jar'
 
 
-def run_variant(variant, run, project, image, output, options, containers, prime=False):
+def run_variant(variant, run, project, image, output, options, containers, keycloak_url, prime=False):
     spring = variant.startswith('spring')
     service = 'order-service' if spring else 'notification-service'
     port = 8082 if spring else 8084
@@ -95,6 +124,8 @@ def run_variant(variant, run, project, image, output, options, containers, prime
         'SPRING_DATA_REDIS_HOST': 'redis', 'SPRING_KAFKA_BOOTSTRAP_SERVERS': 'kafka:9092',
         'ORDER_MESSAGING_ENABLED': 'true', 'ORDER_OUTBOX_RELAY_ENABLED': 'true',
         'SPRING_MAIN_LAZY_INITIALIZATION': str(variant == 'spring-lazy').lower(),
+        **jwt_env('ORDER'), 'ORDER_TOKEN_URI': KEYCLOAK_INTERNAL + '/protocol/openid-connect/token',
+        'ORDER_SERVICE_CLIENT_SECRET': BENCHMARK_SECRET,
     } if spring else {
         'DATASOURCES_DEFAULT_URL': 'jdbc:postgresql://postgres:5432/orderflow?currentSchema=notifications',
         'DATASOURCES_DEFAULT_USERNAME': 'orderflow', 'DATASOURCES_DEFAULT_PASSWORD': 'benchmark-only',
@@ -117,7 +148,9 @@ def run_variant(variant, run, project, image, output, options, containers, prime
         health_seconds = time.perf_counter() - started
         first_api_seconds = None
         if spring:
-            first_api_seconds, _ = http_get(base_url + '/api/v1/orders?page=0&size=1', timeout=options.timeout)
+            token = keycloak_token(keycloak_url, CUSTOMER_GRANT)
+            first_api_seconds, _ = http_get(base_url + '/api/v1/orders?page=0&size=1', timeout=options.timeout,
+                                            token=token)
         if prime:
             print(f'Primed schema and dependencies: {variant}', flush=True)
             return None
@@ -219,9 +252,12 @@ def main():
             'runs': options.runs, 'samples_per_run': options.samples, 'warmup_seconds': options.warmup_seconds,
             'jar_sha256': {s: hashlib.sha256(jar_path(s).read_bytes()).hexdigest()
                            for s in ('order-service', 'notification-service')},
+            'auth': 'CUSTOMER password-grant token fetched from the benchmark Keycloak after health and '
+                    'outside timing; the first order read includes server-side JWT validation and JWKS fetch',
         }
         (output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
         command(*compose, 'up', '-d', '--wait', '--wait-timeout', '120', timeout=240)
+        keycloak_url = 'http://' + command(*compose, 'port', 'keycloak', '8080')
         command(*compose, 'exec', '-T', 'postgres', 'psql', '-U', 'orderflow', '-d', 'orderflow',
                 '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE SCHEMA orders; CREATE SCHEMA notifications;')
         command(*compose, 'exec', '-T', 'kafka', '/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'kafka:9092',
@@ -229,11 +265,11 @@ def main():
         command(*compose, 'exec', '-T', 'kafka', '/opt/kafka/bin/kafka-topics.sh', '--bootstrap-server', 'kafka:9092',
                 '--create', '--if-not-exists', '--topic', 'inventory.stock-events.v1', '--partitions', '3', '--replication-factor', '1')
         for variant in ('spring', 'micronaut'):
-            run_variant(variant, 'prime', project, image, output, options, containers, prime=True)
+            run_variant(variant, 'prime', project, image, output, options, containers, keycloak_url, prime=True)
         for run in range(1, options.runs + 1):
             offset = (run - 1) % len(VARIANTS)
             for variant in VARIANTS[offset:] + VARIANTS[:offset]:
-                result = run_variant(variant, run, project, image, output, options, containers)
+                result = run_variant(variant, run, project, image, output, options, containers, keycloak_url)
                 results.append(result)
                 (output / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
         fields = [k for k in results[0] if k != 'samples']

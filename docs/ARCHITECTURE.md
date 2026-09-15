@@ -105,13 +105,13 @@ Pricing rule (pure domain code, fully unit tested):
 
 Endpoints:
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/v1/products?category=&page=&size=` | Paged |
-| GET | `/api/v1/products/{sku}` | 404 as ProblemDetail |
-| POST | `/api/v1/products` | Admin, validated |
-| PUT | `/api/v1/products/{sku}/prices` | Replaces tier list for a group, evicts cache |
-| POST | `/api/v1/quotes` | Side-effect free; internal, called by order-service only (not routed by the ALB) |
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/api/v1/products?category=&page=&size=` | public | Paged |
+| GET | `/api/v1/products/{sku}` | public | 404 as ProblemDetail |
+| POST | `/api/v1/products` | `ADMIN` | Validated |
+| PUT | `/api/v1/products/{sku}/prices` | `ADMIN` | Replaces tier list for a group, evicts cache |
+| POST | `/api/v1/quotes` | `SCOPE_pricing.quote` (order-service client credentials) | Side-effect free; internal, called by order-service only (not routed by the ALB) |
 
 Quote request/response:
 
@@ -343,9 +343,10 @@ Security:
 - Keycloak realm `orderflow` issues the tokens. The `ADMIN` and `CUSTOMER` roles arrive as a flat `roles` claim and the customer identity as a `customer_id` claim.
 - Clients: `orderflow-cli` (public, password grant, used by scripts and demos) and `order-service` (confidential, client credentials, `pricing.quote` scope).
 - The issuer is `http://localhost:8180/realms/orderflow`; inside Compose the service reads the signing keys from the internal address `http://keycloak:8080/...`, so the issuer claim and the key endpoint differ on purpose.
-- Missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role returns 403 (`/problems/forbidden`).
+- catalog-pricing-service is a resource server with the same validation as order-service. Product reads and actuator endpoints are public; `POST /products` and `PUT /products/{sku}/prices` require the `ADMIN` role; `POST /quotes` requires the `pricing.quote` scope, which only the order-service client credentials token carries.
+- In both services, missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role or scope returns 403 (`/problems/forbidden`).
 - A customer asking for another customer's order gets 404 (`/problems/order-not-found`), so existence is not revealed; listing with another customer's `customerId` is 403. Admins can read and cancel any order but cannot place one.
-- The call carries an OAuth2 client-credentials token of the order-service client (scope pricing.quote), cached and refreshed by Spring Security; token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
+- order-service calls catalog `/api/v1/quotes` with an OAuth2 client-credentials token of the order-service client (scope `pricing.quote`), cached and refreshed by Spring Security; the token request uses the pricing connect/read timeouts. Token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
 - The password grant is a local demo compromise; it is not enabled for production use.
 
 Observability:
@@ -400,6 +401,7 @@ AWS runtime configuration:
 - Runtime defaults to zero tasks. First register all endpoints, publish four images under the required full Git SHA, then activate with the same SHA and force a fresh service deployment. Desired-count scaling alone does not refresh the deployment endpoint snapshot. Existing tasks do not learn new Service Connect endpoints automatically. App services ignore task-definition changes made by Terraform so later CI revisions survive; image_tag alone does not deploy a new app revision.
 - Notification's AWS environment enables Kafka consumption/readiness and LOG delivery without SMTP. DB URLs use sslmode=require, which requests encryption without full CA/hostname verification. The execution role injects the one SSM DB password and handles image/log access; the task role has no attached AWS permissions.
 - Kafka/Redis tasks use ephemeral storage: task replacement loses broker events/offsets and Redis idempotency/cache data. This deployment is a temporary demo, not a durable production cluster. SQL-based Compose smoke cannot inspect private RDS from the Mac without an additional observation path.
+- The AWS/ECS runtime is not supported until the AWS identity-provider step: the `aws` profiles require `*_JWT_ISSUER_URI`, `*_JWT_JWK_SET_URI`, `ORDER_TOKEN_URI` and `ORDER_SERVICE_CLIENT_SECRET`, which Terraform does not provide yet.
 - Native Terraform tests use a mock AWS provider and assert the configuration contracts without creating cloud resources. Actual regional availability, permissions and connectivity require a live plan/apply; OIDC trust and the manual publish/deploy/rollback workflow are implemented with local contract tests; hosted OIDC, ECR publication and ECS deployment still require live validation. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 7. Repository layout
