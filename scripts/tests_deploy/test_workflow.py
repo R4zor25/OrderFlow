@@ -38,7 +38,10 @@ def check_contract(w):
     assert "verify-images" in next(s['run'] for s in release['steps'] if s.get('id')=='images-ready')
     assert release['steps'].index(deploy)>next(i for i,s in enumerate(release['steps']) if s.get('id')=='images-ready')
     builds=[s for s in release['steps'] if s.get('uses','').startswith('docker/build-push-action@')]
-    assert len(builds)==4
+    assert len(builds)==5
+    keycloak=next(s for s in builds if s['with']['context']=='infra/keycloak')
+    assert 'keycloak-image' in keycloak['if']
+    assert any('image-status --service keycloak' in s.get('run','') for s in release['steps'])
     for step in builds:
         assert 'exists' in step['if'] and "'false'" in step['if']
         assert "inputs.operation != 'rollback'" in step['if']

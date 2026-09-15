@@ -189,6 +189,23 @@ class HelperBehaviorTests(unittest.TestCase):
         with self.assertRaises(d.DeployError): d.deploy_all(TARGET,SHA,self.runner,self.summary)
         self.assertEqual(self.runner.mutations(),[])
 
+    def test_verify_images_checks_keycloak_image_too(self):
+        images=d.verify_images(TARGET,SHA,self.runner)
+        self.assertEqual(set(images),set(d.SERVICES)|{'keycloak'})
+        repositories=[a[a.index('--repository-name')+1] for a in self.runner.calls if a[0]=='aws' and a[2]=='describe-images']
+        self.assertIn('orderflow/keycloak',repositories)
+
+    def test_deploy_never_updates_keycloak(self):
+        d.deploy_all(TARGET,SHA,self.runner,self.summary)
+        updated=[a[a.index('--service')+1] for a in self.runner.mutations() if a[2]=='update-service']
+        self.assertNotIn('orderflow-keycloak',updated)
+        self.assertEqual(updated,['orderflow-'+s for s in d.SERVICES])
+
+    def test_keycloak_is_a_release_image_but_not_a_deployable_service(self):
+        self.assertEqual(TARGET.repository('keycloak'),'123456789012.dkr.ecr.eu-central-1.amazonaws.com/orderflow/keycloak')
+        with self.assertRaises(d.DeployError):
+            TARGET.task_prefix('keycloak')
+
     def test_successful_deploy_in_dependency_order_and_preserves_counts(self):
         d.deploy_all(TARGET,SHA,self.runner,self.summary)
         updates=[a for a in self.runner.mutations() if a[2]=='update-service']
@@ -266,6 +283,12 @@ class DispatchTests(unittest.TestCase):
         for arn in ('', TARGET.task_prefix('inventory-service')+'7', TARGET.task_prefix('order-service')+'0'):
             with patch.dict(d.os.environ,env,clear=True), patch.object(d.sys,'argv',['deploy.py','validate','--service','order-service','--task-definition',arn]), patch.object(d.sys,'stderr',io.StringIO()):
                 self.assertEqual(d.main(),1)
+
+    def test_rollback_validate_rejects_keycloak(self):
+        import io
+        env=self.env.copy(); env['RELEASE_OPERATION']='rollback'
+        with patch.dict(d.os.environ,env,clear=True), patch.object(d.sys,'argv',['deploy.py','validate','--service','keycloak','--task-definition','arn:aws:ecs:eu-central-1:123456789012:task-definition/orderflow-keycloak:3']), patch.object(d.sys,'stderr',io.StringIO()):
+            self.assertEqual(d.main(),1)
 
     def test_invalid_response_shape_is_a_safe_deployment_error(self):
         class UnexpectedRunner:

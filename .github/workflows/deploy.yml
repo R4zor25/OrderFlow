@@ -185,7 +185,23 @@ jobs:
           tags: ${{ steps.notification-image.outputs.image_uri }}
           cache-from: type=gha,scope=notification-service
           cache-to: type=gha,mode=max,scope=notification-service
-      - name: Require all four ARM64 images
+      - name: Check immutable image for keycloak
+        id: keycloak-image
+        if: inputs.operation != 'rollback'
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: python3 scripts/deploy.py image-status --service keycloak --sha "$RELEASE_SHA"
+      - name: Publish keycloak when absent
+        if: inputs.operation != 'rollback' && steps.keycloak-image.outputs.exists == 'false'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: infra/keycloak
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.keycloak-image.outputs.image_uri }}
+          cache-from: type=gha,scope=keycloak
+          cache-to: type=gha,mode=max,scope=keycloak
+      - name: Require all five ARM64 images
         id: images-ready
         if: inputs.operation != 'rollback'
         env:

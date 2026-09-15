@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SERVICES = ("catalog-pricing-service", "inventory-service", "order-service", "notification-service")
+# Keycloak is published with each release but run by Terraform, never deployed by this script.
+IMAGES = SERVICES + ("keycloak",)
 REGISTER_FIELDS = ("family", "taskRoleArn", "executionRoleArn", "networkMode", "containerDefinitions",
                    "volumes", "placementConstraints", "requiresCompatibilities", "cpu", "memory",
                    "pidMode", "ipcMode", "proxyConfiguration", "inferenceAccelerators",
@@ -66,9 +68,9 @@ class Target:
                 or self.role_arn != f"arn:aws:iam::{self.account}:role/{self.project}-github-deploy"):
             raise DeployError("Deployment variables do not identify the expected project target.")
 
-    def repository(self, service):
-        require_service(service)
-        return f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{self.project}/{service}"
+    def repository(self, image):
+        require_image(image)
+        return f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{self.project}/{image}"
 
     def task_prefix(self, service):
         require_service(service)
@@ -78,6 +80,11 @@ class Target:
 def require_service(service):
     if service not in SERVICES:
         raise DeployError("Choose one of the four application services.")
+
+
+def require_image(image):
+    if image not in IMAGES:
+        raise DeployError("Choose one of the five release images.")
 
 
 def require_sha(sha):
@@ -106,7 +113,7 @@ def validate_target(target, runner):
 
 
 def find_image(target, service, image_id, runner):
-    require_service(service)
+    require_image(service)
     try:
         response = aws(target, runner, "ecr", "describe-images", "--repository-name",
                        f"{target.project}/{service}", "--image-ids", json.dumps(image_id))
@@ -216,7 +223,7 @@ def checked_image(target, service, image_id, runner):
 
 def verify_images(target, sha, runner):
     require_sha(sha)
-    return {s: checked_image(target, s, {"imageTag": sha}, runner) for s in SERVICES}
+    return {s: checked_image(target, s, {"imageTag": sha}, runner) for s in IMAGES}
 
 
 def update_and_wait(target, service, arn, runner):
@@ -304,7 +311,7 @@ def rollback_one(target, service, arn, runner, summary_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("validate", "image-status", "verify-images", "deploy", "rollback"))
-    parser.add_argument("--service", choices=SERVICES)
+    parser.add_argument("--service", choices=IMAGES)
     parser.add_argument("--sha")
     parser.add_argument("--task-definition")
     args = parser.parse_args()
