@@ -86,6 +86,6 @@ variable "allowed_ingress_cidrs" {
   }
   validation {
     condition     = alltrue([for cidr in var.allowed_ingress_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
-    error_message = "Ingress from 0.0.0.0/0 is not allowed while the APIs have no authentication."
+    error_message = "Ingress from 0.0.0.0/0 is not allowed because the ALB serves plain HTTP."
   }
 }

@@ -161,6 +161,7 @@ run "bootstrap_runtime" {
       contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_HOSTNAME=http://${aws_lb.main.dns_name}") &&
       contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_DB_URL=jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?sslmode=require") &&
       !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_DB_SCHEMA") &&
+      !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_PROXY_HEADERS") &&
       toset([for s in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].secrets : s.name]) ==
       toset(["KC_DB_PASSWORD", "KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD", "ORDER_SERVICE_CLIENT_SECRET", "DEMO_USER_PASSWORD"])
     )

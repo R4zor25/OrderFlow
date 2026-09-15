@@ -47,7 +47,7 @@ class KeycloakImageTest(unittest.TestCase):
                '-p', '127.0.0.1::8080', '-p', '127.0.0.1::9000',
                '-e', 'KC_DB_URL=jdbc:postgresql://postgres:5432/orderflow',
                '-e', 'KC_DB_USERNAME=orderflow', '-e', 'KC_DB_PASSWORD=pg-test',
-               '-e', 'KC_HTTP_ENABLED=true', '-e', 'KC_PROXY_HEADERS=xforwarded',
+               '-e', 'KC_HTTP_ENABLED=true',
                '-e', 'KC_HOSTNAME=http://keycloak.test', '-e', 'KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true',
                '-e', 'KC_BOOTSTRAP_ADMIN_USERNAME=bootstrap', '-e', 'KC_BOOTSTRAP_ADMIN_PASSWORD=bootstrap-test',
                '-e', 'ORDER_SERVICE_CLIENT_SECRET=secret-test', '-e', 'DEMO_USER_PASSWORD=password-test',
@@ -112,6 +112,15 @@ class KeycloakImageTest(unittest.TestCase):
         self.assertEqual('http://keycloak.test/realms/orderflow', token['iss'])
         self.assertEqual('33333333-3333-4333-8333-333333333333', token['customer_id'])
         self.assertIn('CUSTOMER', token['roles'])
+
+    def test_issues_tokens_for_requests_forwarded_by_the_load_balancer(self):
+        url = f'http://127.0.0.1:{self.http_port}/realms/orderflow/protocol/openid-connect/token'
+        form = urllib.parse.urlencode({'grant_type': 'password', 'client_id': 'orderflow-cli',
+                                       'username': 'standard', 'password': 'password-test'}).encode()
+        request = urllib.request.Request(url, data=form, headers={'X-Forwarded-For': '203.0.113.10',
+                                                                 'X-Forwarded-Proto': 'http'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            self.assertIn('access_token', json.load(response))
 
     def test_service_client_gets_pricing_scope(self):
         token = self.token(grant_type='client_credentials', client_id='order-service', client_secret='secret-test')

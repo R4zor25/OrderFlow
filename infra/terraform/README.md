@@ -15,7 +15,7 @@ the deployment workflow are not implemented yet.
 - One ECS cluster, Cloud Map HTTP namespace, seven independent Fargate services:
   catalog-pricing, order, inventory, notification, Kafka, Redis and Keycloak.
 - One internet-facing HTTP ALB, five IP target groups, path routing and default 404.
-- Six application/infrastructure log groups plus a Service Connect proxy log group,
+- Seven application/infrastructure log groups (six runtime plus Keycloak) and a Service Connect proxy log group,
   each retained for three days; separate execution role and application task role.
 
 | Input | Default | Constraint |
@@ -24,7 +24,7 @@ the deployment workflow are not implemented yet.
 | `project_name` | `orderflow` | 2–20 lowercase letters/digits, starting with a letter |
 | `db_engine_version` | `17` | Confirm regional availability of PostgreSQL 17/17.x |
 | `image_tag` | Required | Full 40-character lowercase Git SHA; no `latest` |
-| `runtime_enabled` | `false` | False: six services with zero tasks; true: one task each |
+| `runtime_enabled` | `false` | False: seven services with zero tasks; true: one task each |
 
 Every task uses Linux ARM64, Fargate platform 1.4.0, `awsvpc`, 512 CPU units and
 1024 MiB. The main container has 256 CPU units (relative CPU shares), with hard
@@ -52,7 +52,7 @@ still permit this traffic in the real account.
 
 The ALB security group accepts TCP 80 only from the required `allowed_ingress_cidrs`
 input: 1–10 IPv4 network CIDR blocks, typically your public address as `/32`;
-`0.0.0.0/0` is rejected while the APIs have no authentication. `POST /api/v1/quotes`
+`0.0.0.0/0` is rejected because the ALB, including Keycloak, serves plain HTTP. `POST /api/v1/quotes`
 is not routed by the ALB; order-service reaches it through the `catalog-pricing:8081`
 Service Connect alias.
 
@@ -138,7 +138,7 @@ The task has 1 vCPU / 2 GB (one more Fargate task to budget) and runs one task a
 
 Terraform generates the bootstrap-admin password, the `order-service` client secret
 and the demo-user password into SSM SecureString parameters (`/<project>/keycloak/*`);
-the admin user name is `orderflow-admin`. Read the demo password after apply:
+the admin user name is `orderflow-admin`. Keycloak is not configured to trust `X-Forwarded-*` headers: it sees the ALB's private address, which keeps HTTP requests acceptable under the realm's default SSL rule, so its event logs show the ALB address rather than the client's. Every Terraform apply that changes `image_tag` restarts the single Keycloak task, so sign-in is unavailable for one to two minutes. Read the demo password after apply:
 
 ```bash
 aws ssm get-parameter --with-decryption --query Parameter.Value --output text \
@@ -167,7 +167,7 @@ terraform -chdir=infra/terraform plan -var-file=orderflow.tfvars -var="image_tag
 ```
 
 Inspect that saved plan before explicitly applying it. This first phase registers
-all six services/discovery endpoints with zero tasks. Build and publish the four
+all seven services/discovery endpoints with zero tasks. Build and publish the four
 ARM64 application images and the Keycloak image under that exact SHA to the output ECR URLs. Image
 publication and GitHub deployment automation are a separate setup step.
 
@@ -180,7 +180,7 @@ terraform -chdir=infra/terraform plan -var-file=orderflow.tfvars -var="image_tag
 
 Inspect before applying. All endpoints must already exist: tasks do not pick up
 endpoints introduced after their latest deployment. Activation sets
-`force_new_deployment=true` on all six services, since desired-count scaling alone
+`force_new_deployment=true` on all seven services, since desired-count scaling alone
 does not create a deployment. The false-to-true transition requests a fresh
 deployment after bootstrap registered all endpoints. An unchanged apply does not
 continuously redeploy; later service configuration changes while enabled may force

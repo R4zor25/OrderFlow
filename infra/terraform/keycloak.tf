@@ -51,11 +51,12 @@ resource "aws_ecs_task_definition" "keycloak" {
       { name = "keycloak-http", containerPort = 8080, hostPort = 8080, protocol = "tcp", appProtocol = "http" },
       { name = "keycloak-management", containerPort = 9000, hostPort = 9000, protocol = "tcp" }
     ]
+    # No KC_PROXY_HEADERS: trusting X-Forwarded-For would make every ALB caller "external" and
+    # trigger the realm's HTTPS requirement on this HTTP-only demo; KC_HOSTNAME already fixes the URLs.
     environment = [for name, value in {
       KC_DB_URL                       = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?sslmode=require"
       KC_DB_USERNAME                  = aws_db_instance.main.username
       KC_HTTP_ENABLED                 = "true"
-      KC_PROXY_HEADERS                = "xforwarded"
       KC_HOSTNAME                     = "http://${aws_lb.main.dns_name}"
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC = "true"
     } : { name = name, value = value }]

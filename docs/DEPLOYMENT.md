@@ -34,11 +34,19 @@ Cluster name must equal the project prefix. Role ARN must identify `<project>-gi
 
 ## First startup
 
-1. Review a Terraform plan for `runtime_enabled=false` and `image_tag` set to the full 40-character SHA of the main commit you will dispatch. Apply it with the human AWS identity. All six services/endpoints exist with zero tasks.
+1. Review a Terraform plan for `runtime_enabled=false` and `image_tag` set to the full 40-character SHA of the main commit you will dispatch. Apply it with the human AWS identity. All seven services/endpoints exist with zero tasks.
 2. Set the five repository variables, then Actions → Application release → Run workflow → branch **main**, operation **publish**. The workflow verifies all four services with Testcontainers, then publishes absent immutable SHA tags. It reuses existing tags only after ARM64 inspection. Publication alone does not start ECS tasks.
-3. Review and apply Terraform with the **same** `image_tag` and `runtime_enabled=true`. This activates all six services with a fresh Service Connect endpoint snapshot.
+3. Review and apply Terraform with the **same** `image_tag` and `runtime_enabled=true`. This activates all seven services with a fresh Service Connect endpoint snapshot.
 4. Inspect ECS service/task state and ALB target readiness. This is live validation, not implied by a successful local mock test.
-5. Read the demo-user password from SSM (see the Terraform README, Keycloak section) and run the smoke scenario against the ALB from an address in `allowed_ingress_cidrs`: `BASE_URL=http://<alb-dns> KEYCLOAK_URL=http://<alb-dns> DEMO_USER_PASSWORD=<value> scripts/smoke.sh`. The SQL checks need database access, which the Mac does not have to the private RDS; treat the HTTP part as the live evidence.
+5. Read the demo-user password from SSM (see the Terraform README, Keycloak section) and check authentication against the ALB from an address in `allowed_ingress_cidrs`. `scripts/smoke.sh` cannot run here: its SQL checks need the private RDS, which the Mac cannot reach. Check the HTTP path by hand instead:
+   ```bash
+   TOKEN=$(curl -s -d grant_type=password -d client_id=orderflow-cli -d username=standard \
+     --data-urlencode "password=$DEMO_USER_PASSWORD" "http://<alb-dns>/realms/orderflow/protocol/openid-connect/token" | jq -r .access_token)
+   curl -i -X POST "http://<alb-dns>/api/v1/orders" -H "Authorization: Bearer $TOKEN" \
+     -H "Idempotency-Key: live-$(date +%s)" -H 'Content-Type: application/json' -d '{"lines":[{"sku":"CHAIR-001","quantity":1}]}'
+   curl -s "http://<alb-dns>/api/v1/orders" -H "Authorization: Bearer $TOKEN"
+   ```
+   The order should be accepted (202) and later listed as CONFIRMED.
 
 Known limitation: the deploy helper renders each new revision from the service's running task definition. Environment or secrets added later in Terraform (for example the Keycloak wiring) reach an application only through activation from Terraform's revision or a rollback to a new Terraform revision, not through a later application deploy.
 

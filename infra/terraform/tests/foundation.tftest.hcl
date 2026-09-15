@@ -41,7 +41,7 @@ run "foundation_contract" {
   command = apply
   assert {
     condition     = toset(keys(aws_ecr_repository.service)) == toset(["catalog-pricing-service", "order-service", "inventory-service", "notification-service", "keycloak"])
-    error_message = "All four services need an ECR repository."
+    error_message = "All four services and Keycloak need an ECR repository."
   }
   assert {
     condition = (alltrue([for r in aws_ecr_repository.service :
