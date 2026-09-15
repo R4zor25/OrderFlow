@@ -30,8 +30,8 @@ resource "aws_iam_role_policy" "execution" {
     Statement = [
       { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = ["*"] },
       { Effect = "Allow", Action = ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"], Resource = [for repository in aws_ecr_repository.service : repository.arn] },
-      { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = concat([for group in aws_cloudwatch_log_group.runtime : "${group.arn}:*"], ["${aws_cloudwatch_log_group.service_connect.arn}:*"]) },
-      { Effect = "Allow", Action = ["ssm:GetParameters"], Resource = [aws_ssm_parameter.db_password.arn] }
+      { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = concat([for group in aws_cloudwatch_log_group.runtime : "${group.arn}:*"], ["${aws_cloudwatch_log_group.service_connect.arn}:*", "${aws_cloudwatch_log_group.keycloak.arn}:*"]) },
+      { Effect = "Allow", Action = ["ssm:GetParameters"], Resource = concat([aws_ssm_parameter.db_password.arn], [for parameter in aws_ssm_parameter.keycloak : parameter.arn]) }
     ]
   })
 }

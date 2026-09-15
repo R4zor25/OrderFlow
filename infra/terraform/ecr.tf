@@ -4,6 +4,7 @@ locals {
     "order-service",
     "inventory-service",
     "notification-service",
+    "keycloak",
   ])
 }
 

@@ -40,7 +40,7 @@ variables {
 run "foundation_contract" {
   command = apply
   assert {
-    condition     = toset(keys(aws_ecr_repository.service)) == toset(["catalog-pricing-service", "order-service", "inventory-service", "notification-service"])
+    condition     = toset(keys(aws_ecr_repository.service)) == toset(["catalog-pricing-service", "order-service", "inventory-service", "notification-service", "keycloak"])
     error_message = "All four services need an ECR repository."
   }
   assert {

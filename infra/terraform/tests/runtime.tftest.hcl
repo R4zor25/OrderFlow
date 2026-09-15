@@ -56,7 +56,7 @@ run "bootstrap_runtime" {
     error_message = "Proxy ingress and client aliases must use distinct correct ports."
   }
   assert {
-    condition     = (alltrue([for name, t in aws_ecs_task_definition.application : length(jsondecode(t.container_definitions)[0].secrets) == 1 && jsondecode(t.container_definitions)[0].secrets[0].valueFrom == aws_ssm_parameter.db_password.arn && jsondecode(t.container_definitions)[0].secrets[0].name == "${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_PASSWORD" && alltrue([for e in jsondecode(t.container_definitions)[0].environment : !endswith(e.name, "PASSWORD")])]))
+    condition     = (alltrue([for name, t in aws_ecs_task_definition.application : length(jsondecode(t.container_definitions)[0].secrets) == (name == "order-service" ? 2 : 1) && jsondecode(t.container_definitions)[0].secrets[0].valueFrom == aws_ssm_parameter.db_password.arn && jsondecode(t.container_definitions)[0].secrets[0].name == "${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_PASSWORD" && alltrue([for e in jsondecode(t.container_definitions)[0].environment : !endswith(e.name, "PASSWORD")])]))
     error_message = "Database passwords must only be injected from SSM secrets."
   }
   assert {
@@ -80,8 +80,8 @@ run "bootstrap_runtime" {
     error_message = "Log retention must bound demo storage."
   }
   assert {
-    condition     = (length(jsondecode(aws_iam_role_policy.execution.policy).Statement) == 4 && jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Action == ["ssm:GetParameters"] && jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Resource == [aws_ssm_parameter.db_password.arn])
-    error_message = "Execution role must read only the database parameter."
+    condition     = (length(jsondecode(aws_iam_role_policy.execution.policy).Statement) == 4 && jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Action == ["ssm:GetParameters"] && toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Resource) == toset(concat([aws_ssm_parameter.db_password.arn], [for p in aws_ssm_parameter.keycloak : p.arn])))
+    error_message = "Execution role must read only the database and Keycloak parameters."
   }
   assert {
     condition     = (alltrue([for name, rule in aws_vpc_security_group_ingress_rule.service_connect : rule.from_port == lookup({ catalog-pricing-service = 18081, order-service = 18082, inventory-service = 18083, notification-service = 18084, kafka = 19092, redis = 16379 }, name) && rule.to_port == rule.from_port && rule.referenced_security_group_id == aws_security_group.tasks.id && rule.security_group_id == aws_security_group.tasks.id]))
@@ -147,10 +147,72 @@ run "bootstrap_runtime" {
       toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[1].Resource) == toset([for repo in aws_ecr_repository.service : repo.arn]) &&
       toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[1].Action) == toset(["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"]) &&
       toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[2].Action) == toset(["logs:CreateLogStream", "logs:PutLogEvents"]) &&
-      toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[2].Resource) == toset(concat([for g in aws_cloudwatch_log_group.runtime : "${g.arn}:*"], ["${aws_cloudwatch_log_group.service_connect.arn}:*"])) &&
+      toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[2].Resource) == toset(concat([for g in aws_cloudwatch_log_group.runtime : "${g.arn}:*"], ["${aws_cloudwatch_log_group.service_connect.arn}:*", "${aws_cloudwatch_log_group.keycloak.arn}:*"])) &&
       jsondecode(aws_iam_role.execution.assume_role_policy).Statement[0].Principal.Service == "ecs-tasks.amazonaws.com" &&
     jsondecode(aws_iam_role.task.assume_role_policy).Statement[0].Principal.Service == "ecs-tasks.amazonaws.com")
     error_message = "Execution permissions must be limited to image pulls, log streams and secret injection."
+  }
+  assert {
+    condition = (
+      jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].image == "${aws_ecr_repository.service["keycloak"].repository_url}:${var.image_tag}" &&
+      aws_ecs_task_definition.keycloak.cpu == "1024" && aws_ecs_task_definition.keycloak.memory == "2048" &&
+      jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].memory == 1536 &&
+      contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_HTTP_ENABLED=true") &&
+      contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_HOSTNAME=http://${aws_lb.main.dns_name}") &&
+      contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_DB_URL=jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?sslmode=require") &&
+      !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_DB_SCHEMA") &&
+      toset([for s in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].secrets : s.name]) ==
+      toset(["KC_DB_PASSWORD", "KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD", "ORDER_SERVICE_CLIENT_SECRET", "DEMO_USER_PASSWORD"])
+    )
+    error_message = "Keycloak must run the release image in production mode against RDS with SSM secrets."
+  }
+  assert {
+    condition = (
+      aws_lb_listener_rule.keycloak.priority == 5 &&
+      one(aws_lb_listener_rule.keycloak.condition).path_pattern[0].values == toset(["/realms/*", "/admin/*", "/resources/*"]) &&
+      aws_lb_listener_rule.keycloak.action[0].target_group_arn == aws_lb_target_group.keycloak.arn &&
+      aws_lb_target_group.keycloak.port == 8080 &&
+      aws_lb_target_group.keycloak.health_check[0].port == "9000" &&
+      aws_lb_target_group.keycloak.health_check[0].path == "/health/ready"
+    )
+    error_message = "Only Keycloak paths may route to Keycloak, with readiness checked on the management port."
+  }
+  assert {
+    condition = (
+      aws_ecs_service.keycloak.desired_count == 0 &&
+      aws_ecs_service.keycloak.deployment_minimum_healthy_percent == 0 &&
+      aws_ecs_service.keycloak.deployment_maximum_percent == 100 &&
+      one(one(aws_ecs_service.keycloak.service_connect_configuration).service).discovery_name == "keycloak" &&
+      one(one(aws_ecs_service.keycloak.service_connect_configuration).service).ingress_port_override == 18180 &&
+      one(one(one(aws_ecs_service.keycloak.service_connect_configuration).service).client_alias).port == 8080 &&
+      one(aws_ecs_service.keycloak.load_balancer).container_port == 8080
+    )
+    error_message = "One Keycloak task at a time, reachable as keycloak:8080 inside the namespace and behind the ALB."
+  }
+  assert {
+    condition = (
+      toset([for r in aws_vpc_security_group_ingress_rule.keycloak_from_alb : r.from_port]) == toset([8080, 9000]) &&
+      alltrue([for r in aws_vpc_security_group_ingress_rule.keycloak_from_alb : r.referenced_security_group_id == aws_security_group.alb.id && r.security_group_id == aws_security_group.tasks.id && r.cidr_ipv4 == null]) &&
+      toset([for r in aws_vpc_security_group_egress_rule.alb_keycloak : r.from_port]) == toset([8080, 9000]) &&
+      aws_vpc_security_group_ingress_rule.keycloak_service_connect.from_port == 18180 &&
+      aws_vpc_security_group_ingress_rule.keycloak_service_connect.referenced_security_group_id == aws_security_group.tasks.id
+    )
+    error_message = "Keycloak ports must be reachable only from the ALB and its proxy port only from tasks."
+  }
+  assert {
+    condition     = length(aws_ssm_parameter.keycloak) == 4 && alltrue([for p in aws_ssm_parameter.keycloak : p.type == "SecureString"])
+    error_message = "Keycloak secrets must be SecureString parameters."
+  }
+  assert {
+    condition     = toset(one([for s in jsondecode(aws_iam_role_policy.execution.policy).Statement : s.Resource if contains(s.Action, "ssm:GetParameters")])) == toset(concat([aws_ssm_parameter.db_password.arn], [for p in aws_ssm_parameter.keycloak : p.arn]))
+    error_message = "The execution role may read exactly the database and Keycloak parameters."
+  }
+  assert {
+    condition = alltrue([for name in ["catalog-pricing-service", "order-service"] :
+      contains([for e in jsondecode(aws_ecs_task_definition.application[name].container_definitions)[0].environment : e.value], "http://${aws_lb.main.dns_name}/realms/orderflow") &&
+      contains([for e in jsondecode(aws_ecs_task_definition.application[name].container_definitions)[0].environment : e.value], "http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs")
+    ]) && contains([for e in jsondecode(aws_ecs_task_definition.application["order-service"].container_definitions)[0].environment : "${e.name}=${e.value}"], "ORDER_TOKEN_URI=http://keycloak:8080/realms/orderflow/protocol/openid-connect/token") && contains([for s in jsondecode(aws_ecs_task_definition.application["order-service"].container_definitions)[0].secrets : "${s.name}=${s.valueFrom}"], "ORDER_SERVICE_CLIENT_SECRET=${aws_ssm_parameter.keycloak["client_secret"].arn}")
+    error_message = "Catalog and order must trust the Keycloak issuer and fetch keys internally; order gets the client secret."
   }
   assert {
     condition = (output.cluster_name == aws_ecs_cluster.main.name && output.alb_dns_name == aws_lb.main.dns_name && !output.runtime_enabled && output.image_tag == var.image_tag &&
@@ -163,7 +225,7 @@ run "active_runtime" {
   command = apply
   variables { runtime_enabled = true }
   assert {
-    condition     = (alltrue([for s in merge(aws_ecs_service.application, aws_ecs_service.infrastructure) : s.desired_count == 1 && s.force_new_deployment == true]))
+    condition     = (alltrue([for s in merge(aws_ecs_service.application, aws_ecs_service.infrastructure, { keycloak = aws_ecs_service.keycloak }) : s.desired_count == 1 && s.force_new_deployment == true]))
     error_message = "Activation must start each service with a fresh endpoint deployment."
   }
 }

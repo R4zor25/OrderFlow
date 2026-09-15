@@ -293,14 +293,14 @@ need verification after this repository is connected to GitHub.
 ## AWS runtime configuration
 
 The [Terraform module](infra/terraform/README.md) defines ECR, the default network,
-private RDS/SSM, six ARM64 ECS Fargate services, Service Connect and an HTTP ALB.
+private RDS/SSM, seven ARM64 ECS Fargate services (including Keycloak), Service Connect and an HTTP ALB.
 Runtime is disabled by default until discovery endpoints and SHA-tagged images
 exist. Local mock-provider tests and the notification AWS-profile integration
 check do not prove an AWS deployment. Live plan/apply, image publication and cloud
 traffic remain unverified; GitHub OIDC/deployment automation is implemented and locally checked.
-The AWS/ECS runtime is not supported until the AWS identity-provider step: the `aws` profiles
-require `*_JWT_ISSUER_URI`, `*_JWT_JWK_SET_URI`, `ORDER_TOKEN_URI` and `ORDER_SERVICE_CLIENT_SECRET`,
-which Terraform does not provide yet.
+The AWS runtime runs the same Keycloak realm from an image built in `infra/keycloak`;
+see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the published images, the generated
+secrets and a smoke run against the ALB.
 
 ## Manual ECS release
 

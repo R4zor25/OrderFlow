@@ -7,14 +7,14 @@ the deployment workflow are not implemented yet.
 
 ## Resources
 
-- Four ECR repositories with immutable tags, scan on push and a policy retaining
+- Five ECR repositories (four services and Keycloak) with immutable tags, scan on push and a policy retaining
   the five latest images. Expiration is asynchronous and can remove rollback images.
 - Existing default VPC/subnets in at least two availability zones; no new VPC or NAT.
 - Non-public PostgreSQL 17 RDS, `db.t4g.micro`, Single-AZ, encrypted 20 GiB gp3.
 - Generated database password in SSM SecureString and private local Terraform state.
-- One ECS cluster, Cloud Map HTTP namespace, six independent Fargate services:
-  catalog-pricing, order, inventory, notification, Kafka and Redis.
-- One internet-facing HTTP ALB, four IP target groups, path routing and default 404.
+- One ECS cluster, Cloud Map HTTP namespace, seven independent Fargate services:
+  catalog-pricing, order, inventory, notification, Kafka, Redis and Keycloak.
+- One internet-facing HTTP ALB, five IP target groups, path routing and default 404.
 - Six application/infrastructure log groups plus a Service Connect proxy log group,
   each retained for three days; separate execution role and application task role.
 
@@ -42,6 +42,7 @@ these are initial demo sizes, not production capacity measurements.
 | notification-service | `notification:8084` | 18084 | `/api/v1/notifications` |
 | kafka | `kafka:9092` | 19092 | None |
 | redis | `redis:6379` | 16379 | None |
+| keycloak | `keycloak:8080` | 18180 | `/realms/*`, `/admin/*`, `/resources/*` (priority 5) |
 
 Tasks have public IPs for outbound image/log/secret access. Their security group
 accepts original HTTP application ports only from the ALB group, and proxy ports
@@ -93,8 +94,8 @@ requested, but full hostname/CA verification is not configured. The shared demo
 user is not production isolation.
 
 The execution role pulls ECR images, writes existing log streams and reads only
-the DB SSM parameter via `ssm:GetParameters`. ECS injects the password with the
-container `secrets` field. The separate task role has no attached permissions;
+the DB and the four Keycloak SSM parameters via `ssm:GetParameters`. ECS injects them
+with the container `secrets` field. The separate task role has no attached permissions;
 application code makes no AWS API calls. No GitHub deploy role exists yet.
 
 Kafka (`apache/kafka:4.3.1`) is one combined KRaft node, replication factor one,
@@ -126,6 +127,29 @@ dependency graph to verify ALB forwarding association precedes ECS service creat
 They cannot prove actual AWS permissions, capacity, connectivity, ALB
 traffic, Service Connect behavior or circuit breaker rollback.
 
+## Keycloak
+
+Keycloak runs the `${project}/keycloak` image (built from `infra/keycloak`, same SHA as
+the applications) in production mode with `KC_HTTP_ENABLED=true` behind the HTTP ALB.
+Its hostname is the ALB DNS name, so every token carries the issuer
+`http://<alb-dns>/realms/orderflow`; catalog and order fetch keys and service tokens
+through `keycloak:8080`. State lives in the `public` schema of database `orderflow`.
+The task has 1 vCPU / 2 GB (one more Fargate task to budget) and runs one task at a time.
+
+Terraform generates the bootstrap-admin password, the `order-service` client secret
+and the demo-user password into SSM SecureString parameters (`/<project>/keycloak/*`);
+the admin user name is `orderflow-admin`. Read the demo password after apply:
+
+```bash
+aws ssm get-parameter --with-decryption --query Parameter.Value --output text \
+  --name "$(terraform -chdir=infra/terraform output -json keycloak_parameter_names | jq -r .demo_password)"
+```
+
+The realm is imported only when it does not exist yet. A changed realm file needs a
+new image and `terraform apply`; to re-import it completely, drop the Keycloak tables
+from the `public` schema first. The admin console (`/admin/`) is reachable only from
+`allowed_ingress_cidrs` and over plain HTTP.
+
 ## Real bootstrap and activation (requires AWS access)
 
 Confirm account/region, default subnets in two AZs, available PostgreSQL 17 minor
@@ -133,7 +157,7 @@ and `db.t4g.micro` availability. Estimate RDS, ALB, Fargate, logs/storage and pu
 IPv4 cost before provisioning; zero tasks still leave chargeable ALB/RDS resources.
 There has been no live deployment for this repository.
 
-From the repo root, choose the committed source SHA that will label all four images:
+From the repo root, choose the committed source SHA that will label all five images:
 
 ```bash
 IMAGE_TAG=$(git rev-parse HEAD)
@@ -144,7 +168,7 @@ terraform -chdir=infra/terraform plan -var-file=orderflow.tfvars -var="image_tag
 
 Inspect that saved plan before explicitly applying it. This first phase registers
 all six services/discovery endpoints with zero tasks. Build and publish the four
-ARM64 application images under that exact SHA to the output ECR URLs. Image
+ARM64 application images and the Keycloak image under that exact SHA to the output ECR URLs. Image
 publication and GitHub deployment automation are a separate setup step.
 
 Then plan activation with the **same SHA**:

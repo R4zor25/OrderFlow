@@ -1,6 +1,6 @@
 # Application release on ECS
 
-The manual `Application release` workflow publishes four ARM64 images and can update the four ECS applications. Terraform owns infrastructure and desired counts; the workflow owns application task revisions. Kafka and Redis are not updated by this workflow.
+The manual `Application release` workflow publishes five ARM64 images (four applications and Keycloak) and can update the four ECS applications. Terraform owns infrastructure and desired counts; the workflow owns application task revisions. Kafka, Redis and Keycloak are not updated by this workflow; Keycloak runs the image of the Terraform `image_tag`.
 
 ## Prerequisites
 
@@ -38,6 +38,9 @@ Cluster name must equal the project prefix. Role ARN must identify `<project>-gi
 2. Set the five repository variables, then Actions → Application release → Run workflow → branch **main**, operation **publish**. The workflow verifies all four services with Testcontainers, then publishes absent immutable SHA tags. It reuses existing tags only after ARM64 inspection. Publication alone does not start ECS tasks.
 3. Review and apply Terraform with the **same** `image_tag` and `runtime_enabled=true`. This activates all six services with a fresh Service Connect endpoint snapshot.
 4. Inspect ECS service/task state and ALB target readiness. This is live validation, not implied by a successful local mock test.
+5. Read the demo-user password from SSM (see the Terraform README, Keycloak section) and run the smoke scenario against the ALB from an address in `allowed_ingress_cidrs`: `BASE_URL=http://<alb-dns> KEYCLOAK_URL=http://<alb-dns> DEMO_USER_PASSWORD=<value> scripts/smoke.sh`. The SQL checks need database access, which the Mac does not have to the private RDS; treat the HTTP part as the live evidence.
+
+Known limitation: the deploy helper renders each new revision from the service's running task definition. Environment or secrets added later in Terraform (for example the Keycloak wiring) reach an application only through activation from Terraform's revision or a rollback to a new Terraform revision, not through a later application deploy.
 
 Keep `runtime_enabled=true` in subsequent Terraform inputs while the runtime should remain active. Changing it back to false stops the services. The pipeline never changes desired counts or Terraform state. `image_tag` changes alone do not replace the application's selected task revision because Terraform ignores application `task_definition` drift.
 

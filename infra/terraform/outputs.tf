@@ -70,3 +70,13 @@ output "aws_account_id" {
   description = "Expected deployment account for GitHub repository variables."
   value       = data.aws_caller_identity.current.account_id
 }
+
+output "keycloak_url" {
+  description = "Public Keycloak base URL behind the ALB (HTTP, restricted to allowed_ingress_cidrs)."
+  value       = "http://${aws_lb.main.dns_name}"
+}
+
+output "keycloak_parameter_names" {
+  description = "SSM parameter names holding the Keycloak admin user, admin password, client secret and demo password."
+  value       = { for key, parameter in aws_ssm_parameter.keycloak : key => parameter.name }
+}

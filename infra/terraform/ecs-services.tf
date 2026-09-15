@@ -12,10 +12,12 @@ locals {
       priority       = 10
       paths          = ["/api/v1/products", "/api/v1/products/*"]
       environment = {
-        CATALOG_DB_URL         = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=catalog&sslmode=require"
-        CATALOG_DB_USERNAME    = aws_db_instance.main.username
-        SPRING_PROFILES_ACTIVE = "aws"
-        CATALOG_REDIS_HOST     = "redis"
+        CATALOG_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=catalog&sslmode=require"
+        CATALOG_DB_USERNAME     = aws_db_instance.main.username
+        SPRING_PROFILES_ACTIVE  = "aws"
+        CATALOG_REDIS_HOST      = "redis"
+        CATALOG_JWT_ISSUER_URI  = local.keycloak_issuer
+        CATALOG_JWT_JWK_SET_URI = "${local.keycloak_internal}/certs"
       }
     }
     "order-service" = {
@@ -36,7 +38,11 @@ locals {
         ORDER_REDIS_HOST         = "redis"
         KAFKA_BOOTSTRAP          = "kafka:9092"
         CATALOG_PRICING_BASE_URL = "http://catalog-pricing:8081"
+        ORDER_JWT_ISSUER_URI     = local.keycloak_issuer
+        ORDER_JWT_JWK_SET_URI    = "${local.keycloak_internal}/certs"
+        ORDER_TOKEN_URI          = "${local.keycloak_internal}/token"
       }
+      keycloak_secrets = { ORDER_SERVICE_CLIENT_SECRET = "client_secret" }
     }
     "inventory-service" = {
       alias          = "inventory"
@@ -100,8 +106,11 @@ resource "aws_ecs_task_definition" "application" {
     stopTimeout  = 30
     portMappings = [{ name = "${each.value.alias}-http", containerPort = each.value.port, hostPort = each.value.port, protocol = "tcp", appProtocol = "http" }]
     environment  = [for name, value in each.value.environment : { name = name, value = value }]
-    secrets      = [{ name = "${each.value.db_prefix}_DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }]
-    healthCheck  = { command = ["CMD-SHELL", each.value.health_command], interval = 10, timeout = 5, retries = 3, startPeriod = 60 }
+    secrets = concat(
+      [{ name = "${each.value.db_prefix}_DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }],
+      [for name, key in lookup(each.value, "keycloak_secrets", {}) : { name = name, valueFrom = aws_ssm_parameter.keycloak[key].arn }]
+    )
+    healthCheck = { command = ["CMD-SHELL", each.value.health_command], interval = 10, timeout = 5, retries = 3, startPeriod = 60 }
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -162,5 +171,5 @@ resource "aws_ecs_service" "application" {
     container_port   = each.value.port
   }
   lifecycle { ignore_changes = [task_definition] }
-  depends_on = [aws_lb_listener_rule.application, aws_iam_role_policy.execution, aws_ecs_service.infrastructure]
+  depends_on = [aws_lb_listener_rule.application, aws_iam_role_policy.execution, aws_ecs_service.infrastructure, aws_ecs_service.keycloak]
 }
