@@ -42,6 +42,7 @@ class OutboxRelayFailureIntegrationTest {
 
     @Test
     void transientFailureIsRetriedWithoutParking() {
+        jdbc.update("delete from orders.outbox_event");
         UUID eventId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         jdbc.update("""

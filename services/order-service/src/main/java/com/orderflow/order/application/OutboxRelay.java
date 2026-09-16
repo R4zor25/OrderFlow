@@ -18,10 +18,11 @@ import org.slf4j.LoggerFactory;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.KafkaException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -82,7 +83,7 @@ public class OutboxRelay {
             var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId().toString(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
             if (!publish(event, record)) {
-                // Stop at the first failure: later events of the same order must not overtake it.
+                // A failed send usually means the broker is struggling; the rest of the batch waits for the next run.
                 break;
             }
 
@@ -111,12 +112,7 @@ public class OutboxRelay {
                 log.info("Published outbox event eventId={} orderId={} eventType={}",
                     event.id(), event.aggregateId(), event.eventType());
                 return true;
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                span.error(exception);
-                recordFailure(event, exception);
-                return false;
-            } catch (ExecutionException | TimeoutException | KafkaException exception) {
+            } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
                 span.error(exception);
                 recordFailure(event, exception);
                 return false;
@@ -129,6 +125,9 @@ public class OutboxRelay {
     }
 
     private void recordFailure(PendingEvent event, Throwable failure) {
+        if (Thread.interrupted() || failure instanceof InterruptedException) {
+            restoreInterruptAfterCompletion();
+        }
         boolean permanent = OutboxPublishFailure.isPermanent(failure);
         int attempts = jdbc.queryForObject("""
             update orders.outbox_event
@@ -144,6 +143,16 @@ public class OutboxRelay {
             log.warn("Outbox event delivery failed, will retry eventId={} orderId={} eventType={} attempts={} cause={}",
                 event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
         }
+    }
+
+    private static void restoreInterruptAfterCompletion() {
+        // On a virtual thread an interrupt closes the JDBC socket, which would roll back the acknowledged events.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 
     private record PendingEvent(UUID id, UUID aggregateId, String eventType, String payload, String headers) {

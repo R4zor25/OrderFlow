@@ -17,10 +17,11 @@ import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.KafkaException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -98,16 +99,13 @@ public class InventoryOutboxRelay {
                 } finally {
                     span.end();
                 }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                recordFailure(event, exception);
-            } catch (ExecutionException | TimeoutException | KafkaException exception) {
+            } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
                 recordFailure(event, exception);
             } finally {
                 observations.setCurrentObservationScope(previousObservationScope);
             }
             if (failed) {
-                // Stop at the first failure: later events of the same aggregate must not overtake it.
+                // A failed send usually means the broker is struggling; the rest of the batch waits for the next run.
                 break;
             }
 
@@ -124,6 +122,9 @@ public class InventoryOutboxRelay {
     }
 
     private void recordFailure(PendingEvent event, Throwable failure) {
+        if (Thread.interrupted() || failure instanceof InterruptedException) {
+            restoreInterruptAfterCompletion();
+        }
         boolean permanent = OutboxPublishFailure.isPermanent(failure);
         int attempts = jdbc.queryForObject("""
             update inventory.outbox_event
@@ -139,6 +140,16 @@ public class InventoryOutboxRelay {
             log.warn("Outbox event delivery failed, will retry eventId={} aggregateId={} eventType={} attempts={} cause={}",
                 event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
         }
+    }
+
+    private static void restoreInterruptAfterCompletion() {
+        // On a virtual thread an interrupt closes the JDBC socket, which would roll back the acknowledged events.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 
     private record PendingEvent(UUID id, String aggregateId, String eventType, String payload, String headers) {

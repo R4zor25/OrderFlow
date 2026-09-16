@@ -6,10 +6,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,10 +21,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -118,6 +124,80 @@ class InventoryOutboxRelayParkingIntegrationTest {
 
         assertThat(relay.publishBatch()).isEqualTo(1);
         assertThat(column(eventId, "published_at")).isNotNull();
+    }
+
+    @Test
+    void synchronousSendFailureKeepsAcknowledgedEventsAndIsRetried() {
+        Instant now = Instant.now();
+        UUID delivered = insert(UUID.randomUUID(), now);
+        UUID failing = insert(UUID.randomUUID(), now.plusSeconds(1));
+        when(kafka.send(any(ProducerRecord.class)))
+            .thenReturn(CompletableFuture.completedFuture(null))
+            .thenThrow(new IllegalStateException("Cannot perform operation after producer has been closed"));
+
+        assertThat(relay.publishBatch()).isEqualTo(1);
+
+        assertThat(column(delivered, "published_at")).isNotNull();
+        assertThat(column(failing, "attempts")).isEqualTo(1);
+        assertThat(column(failing, "parked_at")).isNull();
+    }
+
+    @Test
+    void interruptedSendKeepsAcknowledgedEventsAndRestoresTheInterruptAfterCommit() throws Exception {
+        Instant now = Instant.now();
+        UUID delivered = insert(UUID.randomUUID(), now);
+        UUID failing = insert(UUID.randomUUID(), now.plusSeconds(1));
+        when(kafka.send(any(ProducerRecord.class)))
+            .thenReturn(CompletableFuture.completedFuture(null))
+            .thenAnswer(invocation -> {
+                throw new InterruptException("shutting down");
+            });
+
+        RelayRun run = publishOnVirtualThread();
+
+        assertThat(run.published()).isEqualTo(1);
+        assertThat(run.interrupted()).isTrue();
+        assertThat(column(delivered, "published_at")).isNotNull();
+        assertThat(column(failing, "attempts")).isEqualTo(1);
+        assertThat(column(failing, "parked_at")).isNull();
+    }
+
+    @Test
+    void interruptedAcknowledgementWaitKeepsAcknowledgedEventsAndRestoresTheInterruptAfterCommit() throws Exception {
+        Instant now = Instant.now();
+        UUID delivered = insert(UUID.randomUUID(), now);
+        UUID failing = insert(UUID.randomUUID(), now.plusSeconds(1));
+        @SuppressWarnings("unchecked")
+        CompletableFuture<SendResult<String, String>> waiting = mock(CompletableFuture.class);
+        when(waiting.get(anyLong(), any(TimeUnit.class))).thenThrow(new InterruptedException("shutting down"));
+        when(kafka.send(any(ProducerRecord.class)))
+            .thenReturn(CompletableFuture.completedFuture(null))
+            .thenReturn(waiting);
+
+        RelayRun run = publishOnVirtualThread();
+
+        assertThat(run.published()).isEqualTo(1);
+        assertThat(run.interrupted()).isTrue();
+        assertThat(column(delivered, "published_at")).isNotNull();
+        assertThat(column(failing, "attempts")).isEqualTo(1);
+    }
+
+    private RelayRun publishOnVirtualThread() throws InterruptedException {
+        var run = new AtomicReference<RelayRun>();
+        var failure = new AtomicReference<Throwable>();
+        // Production schedules the relay on a virtual thread, where an interrupt closes the JDBC socket.
+        Thread.ofVirtual().start(() -> {
+            try {
+                run.set(new RelayRun(relay.publishBatch(), Thread.interrupted()));
+            } catch (Throwable exception) {
+                failure.set(exception);
+            }
+        }).join();
+        assertThat(failure.get()).isNull();
+        return run.get();
+    }
+
+    private record RelayRun(int published, boolean interrupted) {
     }
 
     private UUID insert(UUID orderId, Instant createdAt) {
