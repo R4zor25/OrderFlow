@@ -18,7 +18,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -42,7 +41,7 @@ class OutboxRelayFailureIntegrationTest {
     private KafkaTemplate<String, String> kafka;
 
     @Test
-    void failedBrokerAcknowledgementLeavesEventUnpublishedForRetry() {
+    void transientFailureIsRetriedWithoutParking() {
         UUID eventId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         jdbc.update("""
@@ -58,14 +57,12 @@ class OutboxRelayFailureIntegrationTest {
             .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")))
             .thenReturn(CompletableFuture.completedFuture(null));
 
-        assertThatThrownBy(relay::publishBatch)
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining(eventId.toString());
+        assertThat(relay.publishBatch()).isZero();
         assertThat(tracer.currentSpan()).isNull();
         assertThat(observations.getCurrentObservation()).isNull();
-        assertThat(jdbc.queryForObject("""
-            select published_at from orders.outbox_event where id = ?
-            """, Timestamp.class, eventId)).isNull();
+        assertThat(jdbc.queryForMap("""
+            select published_at, parked_at, attempts from orders.outbox_event where id = ?
+            """, eventId)).containsEntry("published_at", null).containsEntry("parked_at", null).containsEntry("attempts", 1);
 
         assertThat(relay.publishBatch()).isEqualTo(1);
         assertThat(jdbc.queryForObject("""
