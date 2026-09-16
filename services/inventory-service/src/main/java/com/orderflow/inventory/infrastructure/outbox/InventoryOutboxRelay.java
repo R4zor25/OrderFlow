@@ -14,7 +14,10 @@ import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.KafkaException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,7 @@ public class InventoryOutboxRelay {
     private final Tracer tracer;
     private final Propagator propagator;
     private final ObservationRegistry observations;
+    private static final Logger log = LoggerFactory.getLogger(InventoryOutboxRelay.class);
 
     public InventoryOutboxRelay(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka,
                                 InventoryOutboxRelayProperties properties,
@@ -56,6 +60,7 @@ public class InventoryOutboxRelay {
                    event.payload::text, event.headers::text
             from inventory.outbox_event event
             where event.published_at is null
+              and event.parked_at is null
               and not exists (
                   select 1 from inventory.outbox_event earlier
                   where earlier.aggregate_type = event.aggregate_type
@@ -73,9 +78,11 @@ public class InventoryOutboxRelay {
             rs.getString("payload"),
             rs.getString("headers")));
 
+        int published = 0;
         for (var event : events) {
             var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
+            boolean failed = true;
             var previousObservationScope = observations.getCurrentObservationScope();
             // The saved event context takes precedence over the scheduled relay observation.
             observations.setCurrentObservationScope(null);
@@ -87,16 +94,21 @@ public class InventoryOutboxRelay {
                 }).name("inventory.outbox.publish").start();
                 try (var scope = tracer.withSpan(span)) {
                     kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                    failed = false;
                 } finally {
                     span.end();
                 }
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while publishing outbox event " + event.id(), exception);
-            } catch (ExecutionException | TimeoutException exception) {
-                throw new IllegalStateException("Could not publish outbox event " + event.id(), exception);
+                recordFailure(event, exception);
+            } catch (ExecutionException | TimeoutException | KafkaException exception) {
+                recordFailure(event, exception);
             } finally {
                 observations.setCurrentObservationScope(previousObservationScope);
+            }
+            if (failed) {
+                // Stop at the first failure: later events of the same aggregate must not overtake it.
+                break;
             }
 
             int updated = jdbc.update("""
@@ -106,8 +118,27 @@ public class InventoryOutboxRelay {
             if (updated != 1) {
                 throw new IllegalStateException("Outbox event was not available to mark published: " + event.id());
             }
+            published++;
         }
-        return events.size();
+        return published;
+    }
+
+    private void recordFailure(PendingEvent event, Throwable failure) {
+        boolean permanent = OutboxPublishFailure.isPermanent(failure);
+        int attempts = jdbc.queryForObject("""
+            update inventory.outbox_event
+            set attempts = attempts + 1, last_error = ?, parked_at = ?
+            where id = ?
+            returning attempts
+            """, Integer.class, OutboxPublishFailure.describe(failure),
+            permanent ? Timestamp.from(clock.instant()) : null, event.id());
+        if (permanent) {
+            log.error("Parked undeliverable outbox event eventId={} aggregateId={} eventType={} attempts={} cause={}",
+                event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
+        } else {
+            log.warn("Outbox event delivery failed, will retry eventId={} aggregateId={} eventType={} attempts={} cause={}",
+                event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
+        }
     }
 
     private record PendingEvent(UUID id, String aggregateId, String eventType, String payload, String headers) {
