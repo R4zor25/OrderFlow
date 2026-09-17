@@ -31,12 +31,15 @@ import tools.jackson.databind.ObjectMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = {
     "inventory.messaging.enabled=true",
-    "spring.kafka.consumer.auto-offset-reset=earliest"
+    "spring.kafka.consumer.auto-offset-reset=earliest",
+    "inventory.messaging.error.initial-interval=100ms",
+    "inventory.messaging.error.max-interval=200ms"
 })
 @Import({PostgresTestConfiguration.class, KafkaTestConfiguration.class})
 class OrderPlacedKafkaIntegrationTest {
@@ -158,7 +161,7 @@ class OrderPlacedKafkaIntegrationTest {
     }
 
     @Test
-    void retriesTransientFailureTwiceBeforeReserving() throws Exception {
+    void keepsRetryingTransientFailuresInsteadOfDeadLettering() throws Exception {
         UUID orderId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
@@ -166,6 +169,8 @@ class OrderPlacedKafkaIntegrationTest {
             new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
                 List.of(new OrderPlacedPayload.Line("CHAIR-004", 1))));
         doThrow(new TransientDataAccessResourceException("temporary database failure"))
+            .doThrow(new TransientDataAccessResourceException("temporary database failure"))
+            .doThrow(new TransientDataAccessResourceException("temporary database failure"))
             .doThrow(new TransientDataAccessResourceException("temporary database failure"))
             .doCallRealMethod().when(processor).process(any());
 
@@ -180,17 +185,40 @@ class OrderPlacedKafkaIntegrationTest {
                 select count(*) from inventory.reservation where order_id = ?
                 """, Integer.class, orderId)).isEqualTo(1);
         });
-        verify(processor, times(3)).process(any());
+        verify(processor, times(5)).process(any());
     }
 
     @Test
-    void sendsInvalidOrderToDltWithoutRetrying() throws Exception {
+    void answersInvalidButIdentifiableOrderWithReservationFailure() throws Exception {
         UUID orderId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
             Instant.parse("2026-10-01T10:15:31Z"), orderId.toString(),
             new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
                 List.of(new OrderPlacedPayload.Line("CHAIR-005", 0))));
+
+        producer.send("orders.order-events.v1", orderId.toString(), json.writeValueAsString(placed))
+            .get(10, TimeUnit.SECONDS);
+
+        var result = receiveStockEvent(orderId);
+        var envelope = json.readTree(result.value());
+        assertThat(envelope.get("eventType").asString()).isEqualTo("StockReservationFailed");
+        assertThat(envelope.get("payload").get("reason").asString()).isEqualTo("Invalid order");
+        assertThat(envelope.get("payload").get("unavailableSkus").get(0).asString()).isEqualTo("CHAIR-005");
+        verify(processor, times(1)).process(any());
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.reservation where order_id = ?
+            """, Integer.class, orderId)).isZero();
+    }
+
+    @Test
+    void sendsUnidentifiableOrderToDltWithoutRetrying() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        var placed = new EventEnvelope<>(eventId, "OrderPlaced", 1,
+            Instant.parse("2026-10-01T10:15:31Z"), UUID.randomUUID().toString(),
+            new OrderPlacedPayload(orderId, UUID.randomUUID(), "B2B",
+                List.of(new OrderPlacedPayload.Line("CHAIR-005", 1))));
         String value = json.writeValueAsString(placed);
 
         producer.send("orders.order-events.v1", orderId.toString(), value)
@@ -198,13 +226,10 @@ class OrderPlacedKafkaIntegrationTest {
 
         var deadLetter = receiveEvent("orders.order-events.v1.DLT", orderId.toString());
         assertThat(deadLetter.value()).isEqualTo(value);
-        verify(processor, times(1)).process(any());
+        verify(processor, never()).process(any());
         assertThat(jdbc.queryForObject("""
             select count(*) from inventory.processed_event where event_id = ?
             """, Integer.class, eventId)).isZero();
-        assertThat(jdbc.queryForObject("""
-            select count(*) from inventory.reservation where order_id = ?
-            """, Integer.class, orderId)).isZero();
     }
 
     private ConsumerRecord<String, String> receiveStockEvent(UUID orderId) {

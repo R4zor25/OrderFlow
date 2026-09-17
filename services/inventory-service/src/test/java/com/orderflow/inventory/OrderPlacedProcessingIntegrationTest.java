@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.orderflow.inventory.application.OrderCancellationService;
 import com.orderflow.inventory.application.OrderPlacedProcessor;
+import io.micrometer.core.instrument.MeterRegistry;
 import com.orderflow.inventory.infrastructure.events.EventEnvelope;
 import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
 import org.junit.jupiter.api.AfterEach;
@@ -25,22 +27,28 @@ class OrderPlacedProcessingIntegrationTest {
     private final OrderPlacedProcessor processor;
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final OrderCancellationService cancellation;
+    private final MeterRegistry meters;
     private final java.util.List<String> testSkus = new java.util.ArrayList<>();
     private final java.util.List<UUID> testOrderIds = new java.util.ArrayList<>();
     private final java.util.List<UUID> testEventIds = new java.util.ArrayList<>();
 
     @Autowired
     OrderPlacedProcessingIntegrationTest(OrderPlacedProcessor processor, JdbcTemplate jdbc,
-                                         ObjectMapper json) {
+                                         ObjectMapper json, OrderCancellationService cancellation,
+                                         MeterRegistry meters) {
         this.processor = processor;
         this.jdbc = jdbc;
         this.json = json;
+        this.cancellation = cancellation;
+        this.meters = meters;
     }
 
     @AfterEach
     void removeTestRows() {
         for (UUID orderId : testOrderIds) {
             jdbc.update("delete from inventory.outbox_event where aggregate_id = ?", orderId.toString());
+            jdbc.update("delete from inventory.cancelled_order where order_id = ?", orderId);
         }
         for (UUID eventId : testEventIds) {
             jdbc.update("delete from inventory.processed_event where event_id = ?", eventId);
@@ -119,6 +127,46 @@ class OrderPlacedProcessingIntegrationTest {
         assertThat(lines.size()).isEqualTo(1);
         assertThat(lines.get(0).get("sku").asText()).isEqualTo(sku);
         assertThat(lines.get(0).get("quantity").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    void skipsReservationForAlreadyCancelledOrder() {
+        String sku = insertStock(5);
+        UUID orderId = UUID.randomUUID();
+        UUID cancelEventId = UUID.randomUUID();
+        UUID placeEventId = UUID.randomUUID();
+        testOrderIds.add(orderId);
+        testEventIds.add(cancelEventId);
+        testEventIds.add(placeEventId);
+        cancellation.release(cancelEventId, orderId);
+
+        processor.process(orderPlaced(placeEventId, orderId, new OrderPlacedPayload.Line(sku, 2)));
+
+        assertThat(jdbc.queryForObject("select count(*) from inventory.reservation where order_id = ?",
+            Integer.class, orderId)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from inventory.outbox_event where aggregate_id = ?",
+            Integer.class, orderId.toString())).isZero();
+    }
+
+    @Test
+    void rejectsInvalidOrderOnceAndCountsIt() {
+        UUID orderId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        testOrderIds.add(orderId);
+        testEventIds.add(eventId);
+        var counter = meters.get("inventory.reservation.failed").tag("reason", "invalid_order").counter();
+        double before = counter.count();
+        var placed = orderPlaced(eventId, orderId, new OrderPlacedPayload.Line("CHAIR-001", 0));
+
+        processor.process(placed);
+        processor.process(placed);
+
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.outbox_event
+            where aggregate_id = ? and event_type = 'StockReservationFailed'
+              and payload -> 'payload' ->> 'reason' = 'Invalid order'
+            """, Integer.class, orderId.toString())).isEqualTo(1);
+        assertThat(counter.count()).isEqualTo(before + 1);
     }
 
     private EventEnvelope<OrderPlacedPayload> orderPlaced(UUID eventId, UUID orderId,

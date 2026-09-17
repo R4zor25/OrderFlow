@@ -48,8 +48,9 @@ inventory:
     health:
       timeout: 2s
     error:
-      retry-interval: 250ms
-      retry-count: 2
+      initial-interval: 1s
+      multiplier: 2.0
+      max-interval: 30s
       dlt-send-timeout: 10s
   outbox:
     relay:

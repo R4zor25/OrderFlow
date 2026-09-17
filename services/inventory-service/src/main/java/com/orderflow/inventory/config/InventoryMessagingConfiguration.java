@@ -12,7 +12,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.util.backoff.FixedBackOff;
+import org.springframework.util.backoff.ExponentialBackOff;
 import tools.jackson.core.JacksonException;
 
 @Configuration(proxyBeanMethods = false)
@@ -46,8 +46,10 @@ public class InventoryMessagingConfiguration {
             recoverer.setFailIfSendResultIsError(true);
             recoverer.setWaitForSendResultTimeout(properties.dltSendTimeout());
 
-            var handler = new DefaultErrorHandler(recoverer,
-                new FixedBackOff(properties.retryInterval().toMillis(), properties.retryCount()));
+            var backOff = new ExponentialBackOff(properties.initialInterval().toMillis(), properties.multiplier());
+            backOff.setMaxInterval(properties.maxInterval().toMillis());
+            // No elapsed-time limit: a database outage pauses the partition instead of dead-lettering a saga step.
+            var handler = new DefaultErrorHandler(recoverer, backOff);
             handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
             return handler;
         }

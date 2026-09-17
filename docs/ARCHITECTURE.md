@@ -288,6 +288,7 @@ Solution: the event row is written in the same transaction as the business chang
 
 - Each listener runs in a DB transaction: insert into `processed_event(event_id)`; if it already exists, skip; otherwise apply the change and write any resulting outbox event. Offset is committed after the listener returns.
 - Spring Kafka `DefaultErrorHandler` with `FixedBackOff(1000 ms, 3)` and `DeadLetterPublishingRecoverer`. Deserialization and validation errors are non-retryable and go straight to the DLT.
+- inventory-service retries other failures with an unbounded exponential back-off (1 s, doubling, at most 30 s between attempts) instead of dead-lettering them, so a database outage pauses the partition rather than losing an `OrderPlaced` or `OrderCancelled`. The cost: an unexpected bug also blocks its partition until fixed; it shows as repeated error logs and consumer lag. Identifiable but invalid orders are not errors: inventory answers them with `StockReservationFailed`.
 - Micronaut: `@KafkaListener(errorStrategy = @ErrorStrategy(value = RETRY_ON_ERROR, retryCount = 3))` plus a DLT publish on final failure.
 
 ### 5.5 Saga (choreography)
@@ -322,7 +323,7 @@ sequenceDiagram
     K->>N: notify customer
 ```
 
-Compensation: `OrderCancelled` makes inventory release the order's reservations and emit `StockReleased`. Late events are handled explicitly: a `StockReserved` arriving for an already `CANCELLED` order is ignored by order-service, and inventory releases because it also receives `OrderCancelled` (same key, same partition, so it arrives after `OrderPlaced`).
+Compensation: `OrderCancelled` makes inventory release the order's reservations and emit `StockReleased`. Late events are handled explicitly: a `StockReserved` arriving for an already `CANCELLED` order is ignored by order-service, and inventory releases because it also receives `OrderCancelled` (same key, same partition, so it arrives after `OrderPlaced`). Inventory answers an identifiable but invalid `OrderPlaced` (for example a zero quantity) with `StockReservationFailed` (`reason` "Invalid order") instead of dead-lettering it. It also records cancelled orders, so a late or replayed `OrderPlaced` never reserves stock for an order that is already cancelled.
 
 Why choreography and not an orchestrator: two participants and three outcomes. An orchestrator (or Temporal/Camunda) is the answer once the flow has payment, shipping and timeouts.
 

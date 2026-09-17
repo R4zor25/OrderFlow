@@ -90,7 +90,9 @@ class InventoryBusinessMetricsIntegrationTest {
         processor.process(event);
         assertThat(failures()).isEqualTo(before + 1);
         assertThat(outboxCount(orderId)).isEqualTo(1);
-        assertThat(registry.find("inventory.reservation.failed").counters()).hasSize(1);
+        assertThat(registry.find("inventory.reservation.failed").counters())
+            .extracting(counter -> counter.getId().getTag("reason"))
+            .containsExactlyInAnyOrder("insufficient_stock", "invalid_order");
     }
 
     @Test

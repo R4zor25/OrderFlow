@@ -50,9 +50,9 @@ public class InventoryOutboxWriter {
         write("Order", orderId.toString(), "StockReserved", new StockReservedPayload(orderId, eventLines));
     }
 
-    public void failed(UUID orderId, String unavailableSku) {
+    public void failed(UUID orderId, String reason, List<String> unavailableSkus) {
         write("Order", orderId.toString(), "StockReservationFailed",
-            new StockReservationFailedPayload(orderId, "Insufficient stock", List.of(unavailableSku)));
+            new StockReservationFailedPayload(orderId, reason, unavailableSkus));
     }
 
     public void released(UUID orderId) {
