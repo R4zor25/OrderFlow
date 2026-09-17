@@ -15,6 +15,12 @@ class NotificationSettingsTest {
     }
 
     @Test
+    void acceptsOpsEmailOfExactly320Characters() {
+        var opsEmail = "a".repeat(307) + "@example.test";
+        assertThat(new NotificationSettings(Channel.LOG, opsEmail).opsEmail()).hasSize(320);
+    }
+
+    @Test
     void rejectsBlankOpsEmail() {
         assertThatThrownBy(() -> new NotificationSettings(Channel.LOG, " "))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -23,7 +29,7 @@ class NotificationSettingsTest {
 
     @Test
     void rejectsOpsEmailLongerThan320Characters() {
-        assertThatThrownBy(() -> new NotificationSettings(Channel.LOG, "a".repeat(309) + "@example.test"))
+        assertThatThrownBy(() -> new NotificationSettings(Channel.LOG, "a".repeat(308) + "@example.test"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

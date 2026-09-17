@@ -102,7 +102,7 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
     void sendsOverlongRecipientToDltWithoutRetrying() throws Exception {
         var sample = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
         var oversizedJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", oversizedId.toString())
-                .replace("standard@example.test", "a".repeat(309) + "@example.test");
+                .replace("standard@example.test", "a".repeat(308) + "@example.test");
         try (var producer = new KafkaProducer<String, String>(Map.of("bootstrap.servers", kafka.getBootstrapServers(),
                 "key.serializer", StringSerializer.class, "value.serializer", StringSerializer.class))) {
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 2,

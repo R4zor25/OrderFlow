@@ -88,7 +88,7 @@ class NotificationEventDecoderTest {
     @Test
     void rejectsRecipientLongerThan320Characters() throws Exception {
         var json = contract("order-confirmed")
-                .replace("standard@example.test", "a".repeat(309) + "@example.test");
+                .replace("standard@example.test", "a".repeat(308) + "@example.test");
         assertThatThrownBy(() -> decoder.decode("orders.order-events.v1",
                 "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", json))
                 .isInstanceOf(InvalidNotificationEventException.class);
@@ -100,6 +100,21 @@ class NotificationEventDecoderTest {
         var json = contract("low-stock").replace("CHAIR-001", sku);
         assertThatThrownBy(() -> decoder.decode("inventory.stock-events.v1", sku, json))
                 .isInstanceOf(InvalidNotificationEventException.class);
+    }
+
+    @Test
+    void acceptsRecipientOfExactly320Characters() throws Exception {
+        var json = contract("order-confirmed")
+                .replace("standard@example.test", "a".repeat(307) + "@example.test");
+        assertThat(decoder.decode("orders.order-events.v1", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", json))
+                .isPresent();
+    }
+
+    @Test
+    void acceptsLowStockSkuOfExactly32Characters() throws Exception {
+        var sku = "S".repeat(32);
+        var json = contract("low-stock").replace("CHAIR-001", sku);
+        assertThat(decoder.decode("inventory.stock-events.v1", sku, json)).isPresent();
     }
 
     private static String contract(String name) throws Exception {
