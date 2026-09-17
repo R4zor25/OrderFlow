@@ -76,6 +76,9 @@ server:
   port: 8082
 
 order:
+  saga:
+    pending-timeout: 15m
+    timeout-sweep-cron: "0 * * * * *"
   health:
     kafka:
       timeout: 2s

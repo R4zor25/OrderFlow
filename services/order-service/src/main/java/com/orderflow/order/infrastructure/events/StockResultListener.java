@@ -14,6 +14,8 @@ import tools.jackson.databind.ObjectMapper;
 @ConditionalOnProperty(prefix = "order.messaging", name = "enabled", havingValue = "true")
 public class StockResultListener {
 
+    private static final int MAX_REASON_LENGTH = 500;
+
     private final ObjectMapper json;
     private final StockResultService results;
 
@@ -50,12 +52,14 @@ public class StockResultListener {
             new TypeReference<>() {});
         StockReservationFailedPayload payload = event.payload();
         validateIdentity(record, event, payload.orderId());
-        if (payload.reason() == null || payload.reason().isBlank() || payload.reason().trim().length() > 500
-            || payload.unavailableSkus() == null || payload.unavailableSkus().isEmpty()
+        if (payload.reason() == null || payload.reason().isBlank() || payload.unavailableSkus() == null
             || payload.unavailableSkus().stream().anyMatch(sku -> sku == null || sku.isBlank())) {
-            throw new IllegalArgumentException("StockReservationFailed requires a reason and unavailable SKUs");
+            throw new IllegalArgumentException("StockReservationFailed requires a reason and valid SKUs");
         }
-        results.failed(event.eventId(), payload.orderId(), payload.reason());
+        String reason = payload.reason().trim();
+        // A long reason must not leave the order pending; the stored reason is capped at 500 characters.
+        results.failed(event.eventId(), payload.orderId(),
+            reason.length() > MAX_REASON_LENGTH ? reason.substring(0, MAX_REASON_LENGTH) : reason);
     }
 
     private static void validateIdentity(ConsumerRecord<String, String> record, EventEnvelope<?> event,

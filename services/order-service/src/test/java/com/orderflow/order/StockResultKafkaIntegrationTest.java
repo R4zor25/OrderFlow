@@ -160,6 +160,36 @@ class StockResultKafkaIntegrationTest {
         assertThat(json.readTree(headers).path("traceparent").asString()).startsWith("00-" + traceId + "-");
     }
 
+    @Test
+    void truncatesOverlongRejectionReasonInsteadOfDeadLettering() throws Exception {
+        UUID orderId = createOrder();
+        var event = new EventEnvelope<>(UUID.randomUUID(), "StockReservationFailed", 1, Instant.now(),
+            orderId.toString(), new StockReservationFailedPayload(orderId, "x".repeat(600), List.of("CHAIR-001")));
+
+        send(orderId.toString(), json.writeValueAsString(event));
+
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            var order = orders.findById(orderId).orElseThrow();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+            assertThat(order.getRejectionReason()).isEqualTo("x".repeat(500));
+        });
+    }
+
+    @Test
+    void rejectsInvalidOrderResultWithoutUnavailableSkus() throws Exception {
+        UUID orderId = createOrder();
+        var event = new EventEnvelope<>(UUID.randomUUID(), "StockReservationFailed", 1, Instant.now(),
+            orderId.toString(), new StockReservationFailedPayload(orderId, "Invalid order", List.of()));
+
+        send(orderId.toString(), json.writeValueAsString(event));
+
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            var order = orders.findById(orderId).orElseThrow();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+            assertThat(order.getRejectionReason()).isEqualTo("Invalid order");
+        });
+    }
+
     private void send(String key, String value) throws Exception {
         kafka.send(TOPIC, key, value).get();
     }

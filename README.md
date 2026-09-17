@@ -176,7 +176,7 @@ curl http://localhost:8083/actuator/prometheus
 curl 'http://localhost:8082/actuator/metrics/orders.placed?tag=customerType:B2B'
 ```
 
-Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total` (reason `insufficient_stock` or `invalid_order`). The order endpoint also exposes the existing `outbox_lag_seconds` gauge, which queries the age of the oldest unpublished order event when sampled. Order and inventory also expose `outbox_parked`, the number of outbox events parked as undeliverable (see ARCHITECTURE §5.3 for re-queueing).
+Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total` (reason `insufficient_stock` or `invalid_order`). The order endpoint also exposes the existing `outbox_lag_seconds` gauge, which queries the age of the oldest unpublished order event when sampled. Order and inventory also expose `outbox_parked`, the number of outbox events parked as undeliverable (see ARCHITECTURE §5.3 for re-queueing). Order also exposes `orders_pending_oldest_age_seconds`; orders pending longer than 15 minutes are cancelled automatically (see ARCHITECTURE §5.5).
 
 Counters belong to one running application instance and reset on restart. A crash between database commit and the increment can miss a measurement; an instance can also stop between scrapes. Use them for operational rates and trends, not as a durable accounting ledger. With multiple instances, scrape each instance and aggregate rates across them. The current configuration exposes the endpoints without authentication; restrict management access in the deployment network.
 

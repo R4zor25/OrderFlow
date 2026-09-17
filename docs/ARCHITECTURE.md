@@ -325,6 +325,8 @@ sequenceDiagram
 
 Compensation: `OrderCancelled` makes inventory release the order's reservations and emit `StockReleased`. Late events are handled explicitly: a `StockReserved` arriving for an already `CANCELLED` order is ignored by order-service, and inventory releases because it also receives `OrderCancelled` (same key, same partition, so it arrives after `OrderPlaced`). Inventory answers an identifiable but invalid `OrderPlaced` (for example a zero quantity) with `StockReservationFailed` (`reason` "Invalid order") instead of dead-lettering it. It also records cancelled orders, so a late or replayed `OrderPlaced` never reserves stock for an order that is already cancelled.
 
+Timeout: order-service cancels orders still `PENDING` after `order.saga.pending-timeout` (default 15 minutes). A ShedLock-guarded sweep runs every minute, handles at most 100 orders per run with `FOR UPDATE SKIP LOCKED`, and writes the normal `OrderCancelled` (`previousStatus` `PENDING`), so inventory releases any late reservation and the customer is notified. The `orders.pending.oldest.age.seconds` gauge shows the age of the oldest pending order.
+
 Why choreography and not an orchestrator: two participants and three outcomes. An orchestrator (or Temporal/Camunda) is the answer once the flow has payment, shipping and timeouts.
 
 ## 6. Cross-cutting concerns
