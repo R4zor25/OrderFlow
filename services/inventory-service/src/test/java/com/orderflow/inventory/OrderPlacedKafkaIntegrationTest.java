@@ -22,7 +22,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.kafka.KafkaContainer;
@@ -62,6 +64,9 @@ class OrderPlacedKafkaIntegrationTest {
 
     @MockitoSpyBean
     private OrderPlacedProcessor processor;
+
+    @Autowired
+    private KafkaListenerEndpointRegistry listeners;
 
     @Test
     void consumesCanonicalOrderPlacedAndPublishesStockReserved() throws Exception {
@@ -230,6 +235,18 @@ class OrderPlacedKafkaIntegrationTest {
         assertThat(jdbc.queryForObject("""
             select count(*) from inventory.processed_event where event_id = ?
             """, Integer.class, eventId)).isZero();
+    }
+
+    @Test
+    void consumesEachOrderEventPartitionOnItsOwnThread() {
+        var containers = listeners.getListenerContainers().stream()
+            .filter(container -> java.util.Arrays.asList(container.getContainerProperties().getTopics())
+                .contains("orders.order-events.v1"))
+            .toList();
+
+        assertThat(containers).singleElement()
+            .isInstanceOfSatisfying(ConcurrentMessageListenerContainer.class,
+                container -> assertThat(container.getConcurrency()).isEqualTo(3));
     }
 
     private ConsumerRecord<String, String> receiveStockEvent(UUID orderId) {

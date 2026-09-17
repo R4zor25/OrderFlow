@@ -33,6 +33,8 @@ spring:
     listener:
       observation-enabled: true
       ack-mode: record
+      # One consumer per order-events partition, so a record in back-off only holds its own partition.
+      concurrency: 3
     producer:
       key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
       value-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
