@@ -13,6 +13,9 @@ import java.util.UUID;
 @Singleton
 public final class NotificationEventDecoder {
 
+    private static final int MAX_EMAIL_LENGTH = 320;
+    private static final int MAX_SKU_LENGTH = 32;
+
     public static final String ORDER_TOPIC = "orders.order-events.v1";
     public static final String STOCK_TOPIC = "inventory.stock-events.v1";
 
@@ -70,7 +73,8 @@ public final class NotificationEventDecoder {
                 throw new InvalidNotificationEventException("Missing OrderCancelled previousStatus");
             }
         } else if (payload instanceof NotificationEvent.LowStock event) {
-            if (!aggregateId.equals(event.sku()) || event.available() == null || event.threshold() == null
+            if (blank(event.sku()) || event.sku().length() > MAX_SKU_LENGTH
+                    || !aggregateId.equals(event.sku()) || event.available() == null || event.threshold() == null
                     || event.available() < 0 || event.threshold() < 0) {
                 throw new InvalidNotificationEventException("Invalid LowStock payload");
             }
@@ -78,7 +82,8 @@ public final class NotificationEventDecoder {
     }
 
     private static void orderFields(String aggregateId, UUID orderId, UUID customerId, String email) {
-        if (orderId == null || !aggregateId.equals(orderId.toString()) || customerId == null || blank(email)) {
+        if (orderId == null || !aggregateId.equals(orderId.toString()) || customerId == null || blank(email)
+                || email.length() > MAX_EMAIL_LENGTH) {
             throw new InvalidNotificationEventException("Invalid order payload");
         }
     }

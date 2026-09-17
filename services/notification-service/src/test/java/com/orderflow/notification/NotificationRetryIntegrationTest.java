@@ -27,6 +27,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +43,10 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
     private static final UUID permanentId = UUID.randomUUID();
     private static final AtomicInteger transientAttempts = new AtomicInteger();
     private static final AtomicInteger permanentAttempts = new AtomicInteger();
+    private static final UUID afterId = UUID.randomUUID();
+    private static final UUID oversizedId = UUID.randomUUID();
+    private static final AtomicInteger oversizedAttempts = new AtomicInteger();
+    private static final AtomicBoolean afterStored = new AtomicBoolean();
 
     static {
         kafka.start();
@@ -58,47 +64,67 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
     public Map<String, String> getProperties() {
         return Map.of("kafka.bootstrap.servers", kafka.getBootstrapServers(),
                 "notification.messaging.enabled", "true", "notification.test.failing-store", "true",
+                "notification.messaging.retry-delay", "100ms", "notification.messaging.retry-count", "2",
                 "datasources.default.url", postgres.getJdbcUrl(),
                 "datasources.default.username", postgres.getUsername(),
                 "datasources.default.password", postgres.getPassword());
     }
 
     @Test
-    void retriesTransientFailureAndPausesUncommittedRecordAfterExhaustion() throws Exception {
+    void deadLettersExhaustedRecordOnceAndKeepsConsumingItsPartition() throws Exception {
         var key = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
         var sample = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
         var transientJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", transientId.toString());
         var permanentJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", permanentId.toString());
+        var afterJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", afterId.toString());
         try (var producer = new KafkaProducer<String, String>(Map.of("bootstrap.servers", kafka.getBootstrapServers(),
                 "key.serializer", StringSerializer.class, "value.serializer", StringSerializer.class))) {
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 0, key, transientJson)).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, key, permanentJson)).get();
-            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, key, transientJson)).get();
+            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, key, afterJson)).get();
         }
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
             assertThat(transientAttempts).hasValue(3);
-            assertThat(permanentAttempts).hasValue(4);
+            assertThat(permanentAttempts).hasValue(3);
+            assertThat(afterStored).isTrue();
             try (var admin = AdminClient.create(Map.of("bootstrap.servers", kafka.getBootstrapServers()))) {
                 var offsets = admin.listConsumerGroupOffsets("notification-service").partitionsToOffsetAndMetadata().get();
                 assertThat(offsets.get(new TopicPartition(NotificationEventDecoder.ORDER_TOPIC, 0)).offset()).isEqualTo(1);
-                var failed = offsets.get(new TopicPartition(NotificationEventDecoder.ORDER_TOPIC, 1));
-                assertThat(failed == null ? 0 : failed.offset()).isZero();
+                assertThat(offsets.get(new TopicPartition(NotificationEventDecoder.ORDER_TOPIC, 1)).offset()).isEqualTo(2);
             }
         });
+        var deadLetters = deadLetters();
+        assertThat(deadLetters.stream().filter(permanentJson::equals)).hasSize(1);
+        assertThat(deadLetters).doesNotContain(transientJson, afterJson);
+    }
+
+    @Test
+    void sendsOverlongRecipientToDltWithoutRetrying() throws Exception {
+        var sample = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
+        var oversizedJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", oversizedId.toString())
+                .replace("standard@example.test", "a".repeat(309) + "@example.test");
+        try (var producer = new KafkaProducer<String, String>(Map.of("bootstrap.servers", kafka.getBootstrapServers(),
+                "key.serializer", StringSerializer.class, "value.serializer", StringSerializer.class))) {
+            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 2,
+                    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", oversizedJson)).get();
+        }
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(deadLetters()).contains(oversizedJson));
+        assertThat(oversizedAttempts).hasValue(0);
+    }
+
+    private List<String> deadLetters() {
+        var values = new ArrayList<String>();
         try (var consumer = new KafkaConsumer<String, String>(Map.of("bootstrap.servers", kafka.getBootstrapServers(),
                 "group.id", "retry-dlt-" + UUID.randomUUID(), "key.deserializer", StringDeserializer.class,
                 "value.deserializer", StringDeserializer.class, "auto.offset.reset", "earliest"))) {
             consumer.subscribe(List.of(NotificationEventDecoder.ORDER_TOPIC + ".DLT"));
-            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-                var records = consumer.poll(Duration.ofMillis(250));
-                assertThat(records.count()).isEqualTo(1);
-                assertThat(records.iterator().next().value()).isEqualTo(permanentJson);
-            });
+            var deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
+            while (System.nanoTime() < deadline) {
+                consumer.poll(Duration.ofMillis(250)).forEach(record -> values.add(record.value()));
+            }
         }
-        await().during(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-            assertThat(transientAttempts).hasValue(3);
-            assertThat(permanentAttempts).hasValue(4);
-        });
+        return values;
     }
 
     @Singleton
@@ -112,6 +138,9 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
         @Override
         @Transactional
         public boolean insertIfAbsent(NotificationDraft draft) {
+            if (draft.eventId().equals(oversizedId)) {
+                oversizedAttempts.incrementAndGet();
+            }
             if (draft.eventId().equals(permanentId)) {
                 permanentAttempts.incrementAndGet();
                 throw new IllegalStateException("Simulated permanent database failure");
@@ -119,7 +148,11 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
             if (draft.eventId().equals(transientId) && transientAttempts.incrementAndGet() <= 2) {
                 throw new IllegalStateException("Simulated transient database failure");
             }
-            return super.insertIfAbsent(draft);
+            boolean inserted = super.insertIfAbsent(draft);
+            if (draft.eventId().equals(afterId)) {
+                afterStored.set(inserted);
+            }
+            return inserted;
         }
     }
 }

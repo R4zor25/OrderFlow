@@ -32,18 +32,11 @@ public final class NotificationComposer {
                     "Your order " + cancelled.orderId() + " was cancelled.",
                     settings.channel());
             case NotificationEvent.LowStock lowStock -> new NotificationDraft(
-                    event.eventId(), null, event.eventType(), opsEmail(),
+                    event.eventId(), null, event.eventType(), settings.opsEmail(),
                     "Low stock " + lowStock.sku(),
                     "SKU " + lowStock.sku() + " has " + lowStock.available()
                             + " units available; threshold is " + lowStock.threshold() + ".",
                     settings.channel());
         };
-    }
-
-    private String opsEmail() {
-        if (settings.opsEmail() == null || settings.opsEmail().isBlank()) {
-            throw new IllegalStateException("notification.ops-email is required for LowStock alerts");
-        }
-        return settings.opsEmail();
     }
 }

@@ -20,8 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @KafkaListener(groupId = "notification-service", offsetStrategy = OffsetStrategy.SYNC_PER_RECORD,
-        errorStrategy = @ErrorStrategy(value = ErrorStrategyValue.RETRY_ON_ERROR,
-                retryCount = 3, retryDelay = "1s", stopOnExhaustedRetry = true))
+        errorStrategy = @ErrorStrategy(value = ErrorStrategyValue.RETRY_EXPONENTIALLY_ON_ERROR,
+                retryDelay = "${notification.messaging.retry-delay:1s}",
+                retryCountValue = "${notification.messaging.retry-count:6}"))
 @Requires(property = "notification.messaging.enabled", value = "true")
 public final class NotificationEventListener {
 

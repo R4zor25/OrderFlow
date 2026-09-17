@@ -3,6 +3,7 @@ package com.orderflow.notification.messaging;
 import io.micronaut.json.JsonMapper;
 import io.opentelemetry.api.OpenTelemetry;
 import io.micronaut.configuration.kafka.exceptions.KafkaListenerException;
+import io.micronaut.configuration.kafka.annotation.ErrorStrategyValue;
 import io.micronaut.configuration.kafka.annotation.KafkaListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.CommitFailedException;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class NotificationEventListenerTest {
 
@@ -60,10 +62,25 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void exhaustedRetryKeepsSourceRecordUntilRecovery() {
+    void exhaustedRetryMovesOnInsteadOfPausingThePartition() {
         var strategy = NotificationEventListener.class.getAnnotation(KafkaListener.class).errorStrategy();
-        assertThat(strategy.retryCount()).isEqualTo(3);
-        assertThat(strategy.stopOnExhaustedRetry()).isTrue();
+        assertThat(strategy.value()).isEqualTo(ErrorStrategyValue.RETRY_EXPONENTIALLY_ON_ERROR);
+        assertThat(strategy.retryCountValue()).isEqualTo("${notification.messaging.retry-count:6}");
+        assertThat(strategy.stopOnExhaustedRetry()).isFalse();
+    }
+
+    @Test
+    void deadLetterPublishFailureIsLoggedAndSwallowed() {
+        var record = new ConsumerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, 12,
+                "order-123", "original-json");
+        var failure = new KafkaListenerException("processing failed", new IllegalStateException("temporary"),
+                listener, null, record);
+        NotificationDeadLetterPublisher failing = (topic, key, json) -> {
+            throw new IllegalStateException("broker unavailable");
+        };
+
+        assertThatCode(() -> new NotificationListenerExceptionHandler(failing).handle(failure))
+                .doesNotThrowAnyException();
     }
 
     private record Published(String topic, String key, String json) {

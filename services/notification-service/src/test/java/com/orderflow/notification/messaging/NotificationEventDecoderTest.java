@@ -85,6 +85,23 @@ class NotificationEventDecoderTest {
                 .isInstanceOf(InvalidNotificationEventException.class);
     }
 
+    @Test
+    void rejectsRecipientLongerThan320Characters() throws Exception {
+        var json = contract("order-confirmed")
+                .replace("standard@example.test", "a".repeat(309) + "@example.test");
+        assertThatThrownBy(() -> decoder.decode("orders.order-events.v1",
+                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", json))
+                .isInstanceOf(InvalidNotificationEventException.class);
+    }
+
+    @Test
+    void rejectsLowStockSkuLongerThan32Characters() throws Exception {
+        var sku = "S".repeat(33);
+        var json = contract("low-stock").replace("CHAIR-001", sku);
+        assertThatThrownBy(() -> decoder.decode("inventory.stock-events.v1", sku, json))
+                .isInstanceOf(InvalidNotificationEventException.class);
+    }
+
     private static String contract(String name) throws Exception {
         return Files.readString(Path.of("../../contracts/events/" + name + ".json"));
     }

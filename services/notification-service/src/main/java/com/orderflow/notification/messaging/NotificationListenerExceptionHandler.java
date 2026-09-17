@@ -41,7 +41,15 @@ public final class NotificationListenerExceptionHandler implements KafkaListener
                     record.topic(), record.offset());
             return;
         }
-        deadLetterPublisher.publish(record.topic() + ".DLT", key, json);
+        try {
+            deadLetterPublisher.publish(record.topic() + ".DLT", key, json);
+        } catch (RuntimeException publishFailure) {
+            // The framework commits the record after this handler returns, so the log is its only trace.
+            log.error("Notification Kafka record skipped without a DLT copy at topic={}, partition={}, offset={}, "
+                    + "cause={}", record.topic(), record.partition(), record.offset(),
+                    publishFailure.getClass().getSimpleName());
+            return;
+        }
         log.error("Notification Kafka record moved to DLT after retries at topic={}, partition={}, offset={}, cause={}",
                 record.topic(), record.partition(), record.offset(), causeName(exception));
     }
