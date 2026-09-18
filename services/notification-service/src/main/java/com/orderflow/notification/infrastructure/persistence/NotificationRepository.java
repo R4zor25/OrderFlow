@@ -43,7 +43,7 @@ public interface NotificationRepository extends CrudRepository<NotificationRow, 
     @Query(value = """
             UPDATE notifications.notification
             SET attempts = :attempts, last_error = :lastError, status = :status, next_attempt_at = :nextAttemptAt
-            WHERE event_id = :eventId
+            WHERE event_id = :eventId AND status = 'PENDING'
             """, nativeQuery = true)
     int recordFailure(UUID eventId, int attempts, String lastError, String status, @Nullable Instant nextAttemptAt);
 

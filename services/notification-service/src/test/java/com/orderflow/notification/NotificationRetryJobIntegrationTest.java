@@ -144,6 +144,27 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
                 .isFalse();
     }
 
+    @Test
+    void lateFailureDoesNotReopenASentRow() throws Exception {
+        var draft = pending();
+        store.markSent(draft.eventId());
+
+        store.recordFailure(draft.eventId(), "IllegalStateException: smtp timeout");
+
+        assertThat(status(draft.eventId())).isEqualTo("SENT");
+    }
+
+    @Test
+    void lateFailureDoesNotReopenAFailedRow() throws Exception {
+        var draft = pending();
+        makeDue(draft.eventId(), settings.maxAttempts() - 1);
+        store.recordFailure(draft.eventId(), "IllegalStateException: smtp down");
+
+        store.recordFailure(draft.eventId(), "IllegalStateException: smtp down");
+
+        assertThat(status(draft.eventId())).isEqualTo("FAILED");
+    }
+
     private NotificationDraft pending() {
         var draft = new NotificationDraft(UUID.randomUUID(), UUID.randomUUID(), "OrderConfirmed",
                 "buyer@example.test", "Confirmed", "Order confirmed", Channel.LOG);
@@ -155,11 +176,12 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         try (var connection = connection();
              var update = connection.prepareStatement("""
                      update notifications.notification
-                     set next_attempt_at = now() - interval '1 second', attempts = ?
+                     set next_attempt_at = ?, attempts = ?
                      where event_id = ?
                      """)) {
-            update.setInt(1, attempts);
-            update.setObject(2, eventId);
+            update.setTimestamp(1, java.sql.Timestamp.from(Instant.now().minusSeconds(60)));
+            update.setInt(2, attempts);
+            update.setObject(3, eventId);
             update.executeUpdate();
         }
     }

@@ -21,8 +21,13 @@ public class NotificationDelivery {
         try {
             sender.send(draft);
         } catch (RuntimeException failure) {
-            var outcome = store.recordFailure(draft.eventId(),
+            var recorded = store.recordFailure(draft.eventId(),
                     failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            if (recorded.isEmpty()) {
+                log.info("Notification delivery failure ignored for already settled eventId={}", draft.eventId());
+                return;
+            }
+            var outcome = recorded.get();
             if (outcome.failed()) {
                 log.error("Notification delivery failed permanently for eventId={}, attempts={}, cause={}",
                         draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());

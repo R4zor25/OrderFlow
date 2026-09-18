@@ -10,6 +10,7 @@ import jakarta.transaction.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Singleton
@@ -43,13 +44,18 @@ public class NotificationStore {
     }
 
     @Transactional
-    public DeliveryFailure recordFailure(UUID eventId, String error) {
-        int attempts = repository.findPendingAttemptsForUpdate(eventId).orElse(0) + 1;
+    public Optional<DeliveryFailure> recordFailure(UUID eventId, String error) {
+        var pendingAttempts = repository.findPendingAttemptsForUpdate(eventId);
+        if (pendingAttempts.isEmpty()) {
+            // Another sender already settled the row; SENT and FAILED are final.
+            return Optional.empty();
+        }
+        int attempts = pendingAttempts.get() + 1;
         boolean failed = attempts >= settings.maxAttempts();
         Instant next = failed ? null : clock.instant().plus(settings.backoffAfter(attempts));
         String lastError = error.length() <= MAX_ERROR_LENGTH ? error : error.substring(0, MAX_ERROR_LENGTH);
         repository.recordFailure(eventId, attempts, lastError, failed ? "FAILED" : "PENDING", next);
-        return new DeliveryFailure(attempts, failed);
+        return Optional.of(new DeliveryFailure(attempts, failed));
     }
 
     @Transactional
