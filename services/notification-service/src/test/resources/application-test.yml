@@ -1,0 +1,3 @@
+notification:
+  delivery:
+    retry-enabled: false

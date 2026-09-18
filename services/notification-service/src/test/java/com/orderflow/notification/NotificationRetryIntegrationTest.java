@@ -2,6 +2,7 @@ package com.orderflow.notification;
 
 import com.orderflow.notification.application.NotificationDraft;
 import com.orderflow.notification.application.NotificationStore;
+import com.orderflow.notification.config.NotificationDeliverySettings;
 import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
 import io.micronaut.context.annotation.Replaces;
@@ -131,13 +132,13 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
     @Replaces(NotificationStore.class)
     @Requires(property = "notification.test.failing-store", value = "true")
     static class FailingStore extends NotificationStore {
-        FailingStore(NotificationRepository repository, Clock clock) {
-            super(repository, clock);
+        FailingStore(NotificationRepository repository, NotificationDeliverySettings settings, Clock clock) {
+            super(repository, settings, clock);
         }
 
         @Override
         @Transactional
-        public boolean insertIfAbsent(NotificationDraft draft) {
+        public boolean insertPending(NotificationDraft draft) {
             if (draft.eventId().equals(oversizedId)) {
                 oversizedAttempts.incrementAndGet();
             }
@@ -148,7 +149,7 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
             if (draft.eventId().equals(transientId) && transientAttempts.incrementAndGet() <= 2) {
                 throw new IllegalStateException("Simulated transient database failure");
             }
-            boolean inserted = super.insertIfAbsent(draft);
+            boolean inserted = super.insertPending(draft);
             if (draft.eventId().equals(afterId)) {
                 afterStored.set(inserted);
             }

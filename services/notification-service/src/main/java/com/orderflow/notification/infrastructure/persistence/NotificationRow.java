@@ -11,5 +11,7 @@ import java.util.UUID;
 @MappedEntity(value = "notification", schema = "notifications")
 public record NotificationRow(@Id UUID id, UUID eventId, @Nullable UUID orderId, String type,
                               String recipient, String subject, String body,
-                              String channel, Instant createdAt) {
+                              String channel, Instant createdAt, String status, int attempts,
+                              @Nullable Instant nextAttemptAt, @Nullable Instant sentAt,
+                              @Nullable String lastError) {
 }

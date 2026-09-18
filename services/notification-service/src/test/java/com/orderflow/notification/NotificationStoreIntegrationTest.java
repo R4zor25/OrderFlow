@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import com.orderflow.notification.application.NotificationDelivery;
 import com.orderflow.notification.application.NotificationStore;
 import com.orderflow.notification.application.NotificationProcessor;
 import com.orderflow.notification.config.NotificationSettings.Channel;
@@ -23,6 +24,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.sql.DriverManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,8 +66,8 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
         var draft = new NotificationDraft(eventId, UUID.randomUUID(), "OrderConfirmed",
                 "buyer@example.test", "Confirmed", "Order confirmed", Channel.LOG);
 
-        assertThat(store.insertIfAbsent(draft)).isTrue();
-        assertThat(store.insertIfAbsent(draft)).isFalse();
+        assertThat(store.insertPending(draft)).isTrue();
+        assertThat(store.insertPending(draft)).isFalse();
 
         try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(),
                 postgres.getUsername(), postgres.getPassword());
@@ -86,7 +88,7 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
                 "Low stock", "Low stock", Channel.LOG);
         try (var executor = Executors.newFixedThreadPool(8)) {
             var tasks = IntStream.range(0, 8)
-                    .<java.util.concurrent.Callable<Boolean>>mapToObj(i -> () -> store.insertIfAbsent(draft)).toList();
+                    .<java.util.concurrent.Callable<Boolean>>mapToObj(i -> () -> store.insertPending(draft)).toList();
             int winners = 0;
             for (var result : executor.invokeAll(tasks)) {
                 if (result.get()) winners++;
@@ -96,7 +98,7 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
     }
 
     @Test
-    void commitsBeforeDeliveryAndDoesNotRetryFailedDelivery() throws Exception {
+    void failedDeliveryStaysPendingWithBackoff() throws Exception {
         var eventId = UUID.randomUUID();
         var orderId = UUID.randomUUID();
         var event = new NotificationEvent(eventId, "OrderConfirmed", Instant.now(), orderId.toString(),
@@ -105,27 +107,57 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
         var attempts = new AtomicInteger();
         var processing = new NotificationProcessor(
                 new NotificationComposer(new NotificationSettings(Channel.LOG, "ops@orderflow.test")),
-                store, draft -> {
+                store, new NotificationDelivery(store, draft -> {
                     attempts.incrementAndGet();
-                    try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(),
-                            postgres.getUsername(), postgres.getPassword());
-                         var query = connection.prepareStatement(
-                                 "select count(*) from notifications.notification where event_id = ?")) {
-                        query.setObject(1, eventId);
-                        try (var rows = query.executeQuery()) {
-                            rows.next();
-                            assertThat(rows.getLong(1)).isEqualTo(1);
-                        }
-                    } catch (java.sql.SQLException failure) {
-                        throw new IllegalStateException(failure);
-                    }
                     throw new IllegalStateException("Simulated delivery failure");
-                });
+                }));
+        Instant before = Instant.now();
 
         processing.process(event);
         processing.process(event);
 
         assertThat(attempts).hasValue(1);
+        var row = row(eventId);
+        assertThat(row.get("status")).isEqualTo("PENDING");
+        assertThat(row.get("attempts")).isEqualTo(1);
+        assertThat(((java.sql.Timestamp) row.get("next_attempt_at")).toInstant())
+                .isBetween(before.plusSeconds(29), Instant.now().plusSeconds(31));
+        assertThat((String) row.get("last_error")).isEqualTo("IllegalStateException: Simulated delivery failure");
+    }
+
+    @Test
+    void successfulDeliveryMarksSent() throws Exception {
+        var eventId = UUID.randomUUID();
+        var orderId = UUID.randomUUID();
+        var event = new NotificationEvent(eventId, "OrderConfirmed", Instant.now(), orderId.toString(),
+                new NotificationEvent.OrderConfirmed(orderId, UUID.randomUUID(), "buyer@orderflow.test",
+                        new BigDecimal("12.00"), "EUR"));
+
+        processor.process(event);
+
+        var row = row(eventId);
+        assertThat(row.get("status")).isEqualTo("SENT");
+        assertThat(row.get("sent_at")).isNotNull();
+        assertThat(row.get("next_attempt_at")).isNull();
+    }
+
+    private Map<String, Object> row(UUID eventId) throws Exception {
+        try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(),
+                postgres.getUsername(), postgres.getPassword());
+             var query = connection.prepareStatement("""
+                     select status, attempts, next_attempt_at, sent_at, last_error
+                     from notifications.notification where event_id = ?
+                     """)) {
+            query.setObject(1, eventId);
+            try (var rows = query.executeQuery()) {
+                rows.next();
+                var values = new java.util.HashMap<String, Object>();
+                for (var column : List.of("status", "attempts", "next_attempt_at", "sent_at", "last_error")) {
+                    values.put(column, rows.getObject(column));
+                }
+                return values;
+            }
+        }
     }
 
     @Test
@@ -135,7 +167,7 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
                 Files.readString(Path.of("../../contracts/events/order-confirmed.json"))).orElseThrow();
 
         processor.process(event);
-        assertThat(store.insertIfAbsent(new NotificationDraft(event.eventId(),
+        assertThat(store.insertPending(new NotificationDraft(event.eventId(),
                 UUID.fromString("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "OrderConfirmed",
                 "buyer@example.test", "Confirmed", "Confirmed", Channel.LOG))).isFalse();
     }

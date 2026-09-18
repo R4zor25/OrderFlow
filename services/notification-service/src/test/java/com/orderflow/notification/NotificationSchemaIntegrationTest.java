@@ -142,8 +142,8 @@ class NotificationSchemaIntegrationTest implements TestPropertyProvider {
             throws SQLException {
         try (var statement = connection.prepareStatement("""
                 insert into notifications.notification
-                    (id, event_id, type, recipient, subject, body, channel, created_at)
-                values (?, ?, 'OrderConfirmed', 'buyer@example.test', 'Subject', 'Body', 'LOG', now())
+                    (id, event_id, type, recipient, subject, body, channel, created_at, status)
+                values (?, ?, 'OrderConfirmed', 'buyer@example.test', 'Subject', 'Body', 'LOG', now(), 'PENDING')
                 """)) {
             statement.setObject(1, id);
             statement.setObject(2, eventId);

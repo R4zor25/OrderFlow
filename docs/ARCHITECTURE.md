@@ -218,8 +218,8 @@ Scheduled jobs:
 Responsibility: turn business events into customer and ops notifications. Uses Micronaut Kafka and Micronaut Data JDBC.
 
 - Micronaut Kafka `@KafkaListener` on both topics, handling `OrderConfirmed`, `OrderRejected`, `OrderCancelled`, `LowStock`
-- Micronaut Data JDBC + Flyway, table `notification(id uuid pk, event_id uuid unique, order_id uuid null, type, recipient, subject, body, channel, created_at)`
-- Idempotency: `INSERT ... ON CONFLICT (event_id) DO NOTHING`; send only if the insert happened
+- Micronaut Data JDBC + Flyway, table `notification(id uuid pk, event_id uuid unique, order_id uuid null, type, recipient, subject, body, channel, created_at, status, attempts, next_attempt_at, sent_at, last_error)`
+- Delivery is at-least-once: the listener inserts a `PENDING` row (`ON CONFLICT (event_id) DO NOTHING`, so a redelivered event creates nothing new) and sends immediately; success marks it `SENT`. Failures and crashes leave it `PENDING`. A retry job claims due rows with `FOR UPDATE SKIP LOCKED` and a two-minute lease, sends outside the transaction and backs off exponentially from 30 s up to 1 h. After 10 attempts the row becomes `FAILED` with an ERROR log; an operator can re-queue it with `UPDATE … SET status = 'PENDING', attempts = 0, next_attempt_at = now()`. A crash after the SMTP server accepted a message but before it was marked `SENT` sends it twice.
 - Channel `SMTP` (Micronaut Email + JavaMail to Mailpit) locally, channel `LOG` on AWS, selected by config
 - `GET /api/v1/notifications?orderId=` for inspection
 - Customer email arrives inside the event payload (event-carried state transfer), so this service never calls order-service

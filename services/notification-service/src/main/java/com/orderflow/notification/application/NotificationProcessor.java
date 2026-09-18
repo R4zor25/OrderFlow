@@ -12,26 +12,21 @@ public final class NotificationProcessor {
 
     private final NotificationComposer composer;
     private final NotificationStore store;
-    private final NotificationSender sender;
+    private final NotificationDelivery delivery;
 
     public NotificationProcessor(NotificationComposer composer, NotificationStore store,
-                                 NotificationSender sender) {
+                                 NotificationDelivery delivery) {
         this.composer = composer;
         this.store = store;
-        this.sender = sender;
+        this.delivery = delivery;
     }
 
     public void process(NotificationEvent event) {
         NotificationDraft draft = composer.compose(event);
-        if (!store.insertIfAbsent(draft)) {
+        if (!store.insertPending(draft)) {
             log.info("Notification already exists for eventId={}", event.eventId());
             return;
         }
-        try {
-            sender.send(draft);
-        } catch (RuntimeException failure) {
-            log.error("Notification delivery failed after insertion for eventId={}, cause={}",
-                    event.eventId(), failure.getClass().getSimpleName());
-        }
+        delivery.deliver(draft);
     }
 }

@@ -1,28 +1,71 @@
 package com.orderflow.notification.application;
 
+import com.orderflow.notification.config.NotificationDeliverySettings;
+import com.orderflow.notification.config.NotificationSettings.Channel;
 import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
+import com.orderflow.notification.infrastructure.persistence.NotificationRow;
 import jakarta.inject.Singleton;
 import jakarta.transaction.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Singleton
 public class NotificationStore {
 
+    private static final int MAX_ERROR_LENGTH = 1000;
+
     private final NotificationRepository repository;
+    private final NotificationDeliverySettings settings;
     private final Clock clock;
 
-    public NotificationStore(NotificationRepository repository, Clock clock) {
+    public NotificationStore(NotificationRepository repository, NotificationDeliverySettings settings, Clock clock) {
         this.repository = repository;
+        this.settings = settings;
         this.clock = clock;
     }
 
     @Transactional
-    public boolean insertIfAbsent(NotificationDraft draft) {
-        int inserted = repository.insertIfAbsent(UUID.randomUUID(), draft.eventId(), draft.orderId(),
+    public boolean insertPending(NotificationDraft draft) {
+        Instant now = clock.instant();
+        // The lease keeps the retry job away while the listener is still delivering this row.
+        int inserted = repository.insertPending(UUID.randomUUID(), draft.eventId(), draft.orderId(),
                 draft.type(), draft.recipient(), draft.subject(), draft.body(),
-                draft.channel().name(), clock.instant());
+                draft.channel().name(), now, now.plus(settings.lease()));
         return inserted == 1;
+    }
+
+    @Transactional
+    public void markSent(UUID eventId) {
+        repository.markSent(eventId, clock.instant());
+    }
+
+    @Transactional
+    public DeliveryFailure recordFailure(UUID eventId, String error) {
+        int attempts = repository.findPendingAttemptsForUpdate(eventId).orElse(0) + 1;
+        boolean failed = attempts >= settings.maxAttempts();
+        Instant next = failed ? null : clock.instant().plus(settings.backoffAfter(attempts));
+        String lastError = error.length() <= MAX_ERROR_LENGTH ? error : error.substring(0, MAX_ERROR_LENGTH);
+        repository.recordFailure(eventId, attempts, lastError, failed ? "FAILED" : "PENDING", next);
+        return new DeliveryFailure(attempts, failed);
+    }
+
+    @Transactional
+    public List<NotificationDraft> claimDue() {
+        Instant now = clock.instant();
+        var due = repository.findDueForUpdate(now, settings.batchSize());
+        if (due.isEmpty()) {
+            return List.of();
+        }
+        repository.extendLease(due.stream().map(NotificationRow::id).toList(), now.plus(settings.lease()));
+        return due.stream()
+                .map(row -> new NotificationDraft(row.eventId(), row.orderId(), row.type(), row.recipient(),
+                        row.subject(), row.body(), Channel.valueOf(row.channel())))
+                .toList();
+    }
+
+    public record DeliveryFailure(int attempts, boolean failed) {
     }
 }
