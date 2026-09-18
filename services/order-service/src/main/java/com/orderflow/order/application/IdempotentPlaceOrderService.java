@@ -56,19 +56,24 @@ public class IdempotentPlaceOrderService {
             return replayed.result();
         }
         var acquired = (RedisIdempotencyStore.Acquired) decision;
-        var existing = existingOrder(command.customerId(), idempotency);
-        if (existing.isPresent()) {
-            completeQuietly(acquired, existing.get(), command.customerId());
-            return existing.get();
-        }
-        PlaceOrderResult result;
         try {
-            result = placeOrderService.place(command, idempotency);
-        } catch (DataIntegrityViolationException duplicate) {
-            var winner = existingOrder(command.customerId(), idempotency).orElseThrow(() -> duplicate);
-            completeQuietly(acquired, winner, command.customerId());
-            return winner;
+            var existing = existingOrder(command.customerId(), idempotency);
+            if (existing.isPresent()) {
+                completeQuietly(acquired, existing.get(), command.customerId());
+                return existing.get();
+            }
+            PlaceOrderResult result;
+            try {
+                result = placeOrderService.place(command, idempotency);
+            } catch (DataIntegrityViolationException duplicate) {
+                var winner = existingOrder(command.customerId(), idempotency).orElseThrow(() -> duplicate);
+                completeQuietly(acquired, winner, command.customerId());
+                return winner;
+            }
+            completeQuietly(acquired, result, command.customerId());
+            return result;
         } catch (RuntimeException | Error failure) {
+            // Every outcome that is not a replay frees the claim, so a correct retry is not blocked by it.
             try {
                 store.release(acquired);
             } catch (RuntimeException cleanupFailure) {
@@ -76,8 +81,6 @@ public class IdempotentPlaceOrderService {
             }
             throw failure;
         }
-        completeQuietly(acquired, result, command.customerId());
-        return result;
     }
 
     private Optional<PlaceOrderResult> existingOrder(UUID customerId, IdempotencyKey idempotency) {

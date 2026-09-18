@@ -8,6 +8,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import com.orderflow.order.domain.OrderStatus;
+import com.orderflow.order.application.PlaceOrderResult;
 import com.orderflow.order.domain.IdempotencyException;
 import com.orderflow.order.infrastructure.pricing.PricingGateway;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
@@ -318,7 +320,11 @@ class PlaceOrderIntegrationTest {
             UUID.fromString("33333333-3333-4333-8333-333333333333"), key, "a".repeat(64));
 
         assertThat(redis.getExpire(claimed.redisKey())).isBetween(1L, 60L);
-        idempotencyStore.release(claimed);
+
+        idempotencyStore.complete(claimed, new PlaceOrderResult(UUID.randomUUID(), OrderStatus.PENDING, "EUR",
+            new BigDecimal("1.00"), new BigDecimal("0.27"), new BigDecimal("1.27")));
+
+        assertThat(redis.getExpire(claimed.redisKey())).isGreaterThan(60L);
     }
 
     @Test
@@ -336,6 +342,49 @@ class PlaceOrderIntegrationTest {
             values (?, '33333333-3333-4333-8333-333333333333', 'PENDING', 'EUR', 0, 0, 0, now(), now(), 0, ?, ?)
             """, UUID.randomUUID(), key, "a".repeat(64)))
             .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void changedRequestDoesNotBlockTheOriginalRetry() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        String key = UUID.randomUUID().toString();
+        MockHttpServletResponse first = postOrder(key, requestBody());
+        redis.delete(redisKey(key));
+        assertThat(postOrder(key, """
+            {"lines":[{"sku":"CHAIR-001","quantity":3}]}
+            """).getStatus()).isEqualTo(422);
+
+        MockHttpServletResponse retry = postOrder(key, requestBody());
+
+        assertThat(retry.getStatus()).isEqualTo(202);
+        assertThat(retry.getHeader("Location")).isEqualTo(first.getHeader("Location"));
+    }
+
+    @Test
+    void duplicateInsertAfterLeaseExpiryReplaysTheWinner() throws Exception {
+        String hashSource = UUID.randomUUID().toString();
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        assertThat(postOrder(hashSource, requestBody()).getStatus()).isEqualTo(202);
+        String requestHash = requestHashOf(hashSource);
+        String key = UUID.randomUUID().toString();
+        UUID winner = UUID.randomUUID();
+        when(pricing.quote(any(QuoteRequest.class))).thenAnswer(invocation -> {
+            // Simulates a second request that committed while this one's lease had expired.
+            jdbc.update("""
+                insert into orders.orders (id, customer_id, status, currency, total_net, total_vat, total_gross,
+                                           created_at, updated_at, version, idempotency_key, request_hash)
+                values (?, '33333333-3333-4333-8333-333333333333', 'PENDING', 'EUR', 169.80, 45.85, 215.65,
+                        now(), now(), 0, ?, ?)
+                """, winner, key, requestHash);
+            return validQuote();
+        });
+
+        MockHttpServletResponse response = postOrder(key, requestBody());
+
+        assertThat(response.getStatus()).isEqualTo(202);
+        assertThat(response.getHeader("Location")).isEqualTo("/api/v1/orders/" + winner);
+        assertThat(ordersWithKey(key)).isEqualTo(1);
+        assertThat(redis.opsForValue().get(redisKey(key))).contains("COMPLETED");
     }
 
     private long ordersWithKey(String key) {
