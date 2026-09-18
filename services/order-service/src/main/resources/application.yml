@@ -94,6 +94,7 @@ order:
       ack-timeout: 10s
   idempotency:
     ttl: 24h
+    in-progress-lease: 60s
   pricing:
     base-url: ${CATALOG_PRICING_BASE_URL:http://localhost:8081}
     connect-timeout: 1s

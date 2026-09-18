@@ -167,10 +167,10 @@ Endpoints:
 Place-order flow:
 
 1. Authenticate the customer from the JWT; `customerId` comes from the `customer_id` claim, not the request body. Validate the request (Bean Validation).
-2. Idempotency: `SET idem:{customerId}:{key} IN_PROGRESS NX EX 86400` in Redis. If the key exists with a stored result, return the same response. If it exists with a different request hash, return 422. If `IN_PROGRESS`, return 409.
+2. Idempotency: `SET idem:{customerId}:{key} IN_PROGRESS NX EX 60` in Redis (a 60-second lease). If the key exists with a stored result, return the same response. If it exists with a different request hash, return 422. If it is `IN_PROGRESS`, look the key up in Postgres: return that order if it exists, otherwise 409. After a successful claim, check Postgres first, so a retry after an expired lease or a Redis restart returns the existing order instead of creating a duplicate.
 3. Call catalog-pricing `POST /api/v1/quotes` through the HTTP interface client. Timeouts: connect 1 s, read 2 s. Retry: 2 attempts with backoff on connect errors and 5xx. Circuit breaker around it; when open, respond `503` ProblemDetail with `Retry-After`. The call carries an OAuth2 client-credentials token of the order-service client (scope pricing.quote), cached and refreshed by Spring Security; the token request uses the same connect and read timeouts. Token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
-4. In one DB transaction: insert order + lines with status `PENDING`, insert `OrderPlaced` into `outbox_event`.
-5. Store the result under the idempotency key.
+4. In one DB transaction: insert order + lines with status `PENDING`, insert `OrderPlaced` into `outbox_event`, including the customer's idempotency key and request hash under a unique `(customer_id, idempotency_key)` index.
+5. Store the result under the idempotency key for 24 hours. If that fails after the commit, the client still gets the 202 and later retries are answered from Postgres; a replay from Postgres returns the order's current status.
 
 Why the quote call is outside the transaction: never hold a DB connection while waiting on the network.
 

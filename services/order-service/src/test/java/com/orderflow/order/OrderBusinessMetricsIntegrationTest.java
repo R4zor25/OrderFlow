@@ -1,5 +1,6 @@
 package com.orderflow.order;
 
+import com.orderflow.order.application.IdempotencyKey;
 import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -210,7 +211,8 @@ class OrderBusinessMetricsIntegrationTest {
     private UUID place(UUID customerId) {
         return placement.persist(customers.findById(customerId).orElseThrow(),
             List.of(new Order.PricedLine("CHAIR-001", 1, new BigDecimal("84.90"))),
-            new BigDecimal("22.92"), NOW).id();
+            new BigDecimal("22.92"), NOW,
+            new IdempotencyKey(UUID.randomUUID().toString(), "a".repeat(64))).id();
     }
 
     private double placed(String type) {

@@ -32,8 +32,10 @@ public class PersistPlacedOrderService {
 
     @Transactional
     public PlaceOrderResult persist(Customer customer, List<Order.PricedLine> pricedLines,
-                                    BigDecimal totalVat, Instant now) {
-        Order order = orders.saveAndFlush(Order.place(customer, pricedLines, totalVat, now));
+                                    BigDecimal totalVat, Instant now, IdempotencyKey idempotency) {
+        Order order = Order.place(customer, pricedLines, totalVat, now);
+        order.recordIdempotencyKey(idempotency.key(), idempotency.requestHash());
+        order = orders.saveAndFlush(order);
         outbox.placed(order, now);
         metrics.placedAfterCommit(customer.getType());
         log.info("Order placed orderId={}", order.getId());

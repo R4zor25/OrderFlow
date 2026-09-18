@@ -1,6 +1,7 @@
 package com.orderflow.order.infrastructure;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.orderflow.order.domain.Order;
@@ -33,4 +34,6 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
         where o.id in :ids
         """)
     List<Order> findAllWithCustomerAndLines(@Param("ids") List<UUID> ids);
+
+    Optional<Order> findByCustomerIdAndIdempotencyKey(UUID customerId, String idempotencyKey);
 }

@@ -8,6 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import com.orderflow.order.domain.IdempotencyException;
 import com.orderflow.order.infrastructure.pricing.PricingGateway;
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
@@ -63,7 +64,7 @@ class PlaceOrderIntegrationTest {
     @Autowired
     private StringRedisTemplate redis;
 
-    @Autowired
+    @MockitoSpyBean
     private RedisIdempotencyStore idempotencyStore;
 
     @MockitoBean
@@ -247,6 +248,107 @@ class PlaceOrderIntegrationTest {
             .isInstanceOf(com.orderflow.order.domain.IdempotencyException.class)
             .hasMessageContaining("still in progress");
         idempotencyStore.release(replacement);
+    }
+
+    @Test
+    void completeFailureAfterCommitStillReturnsTheOrder() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        doThrow(new IdempotencyException(IdempotencyException.Reason.STORE_UNAVAILABLE, "redis down"))
+            .when(idempotencyStore).complete(any(), any());
+        String key = UUID.randomUUID().toString();
+
+        MockHttpServletResponse first = postOrder(key, requestBody());
+        org.mockito.Mockito.reset(idempotencyStore);
+        MockHttpServletResponse retry = postOrder(key, requestBody());
+
+        assertThat(first.getStatus()).isEqualTo(202);
+        assertThat(retry.getStatus()).isEqualTo(202);
+        assertThat(retry.getHeader("Location")).isEqualTo(first.getHeader("Location"));
+        assertThat(ordersWithKey(key)).isEqualTo(1);
+    }
+
+    @Test
+    void redisRestartReplaysFromDatabase() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        String key = UUID.randomUUID().toString();
+        MockHttpServletResponse first = postOrder(key, requestBody());
+        redis.delete(redisKey(key));
+
+        MockHttpServletResponse retry = postOrder(key, requestBody());
+
+        assertThat(retry.getStatus()).isEqualTo(202);
+        assertThat(retry.getHeader("Location")).isEqualTo(first.getHeader("Location"));
+        assertThat(ordersWithKey(key)).isEqualTo(1);
+        verify(pricing, times(1)).quote(any(QuoteRequest.class));
+    }
+
+    @Test
+    void stuckInProgressWithCommittedOrderReplays() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        String key = UUID.randomUUID().toString();
+        MockHttpServletResponse first = postOrder(key, requestBody());
+        redis.delete(redisKey(key));
+        idempotencyStore.claim(UUID.fromString("33333333-3333-4333-8333-333333333333"), key, requestHashOf(key));
+
+        MockHttpServletResponse retry = postOrder(key, requestBody());
+
+        assertThat(retry.getStatus()).isEqualTo(202);
+        assertThat(retry.getHeader("Location")).isEqualTo(first.getHeader("Location"));
+    }
+
+    @Test
+    void differentRequestWithSameKeyIsRejectedFromDatabase() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        String key = UUID.randomUUID().toString();
+        assertThat(postOrder(key, requestBody()).getStatus()).isEqualTo(202);
+        redis.delete(redisKey(key));
+
+        MockHttpServletResponse changed = postOrder(key, """
+            {"lines":[{"sku":"CHAIR-001","quantity":3}]}
+            """);
+
+        assertThat(changed.getStatus()).isEqualTo(422);
+        assertThat(ordersWithKey(key)).isEqualTo(1);
+    }
+
+    @Test
+    void inProgressClaimUsesShortLease() {
+        String key = UUID.randomUUID().toString();
+        var claimed = (RedisIdempotencyStore.Acquired) idempotencyStore.claim(
+            UUID.fromString("33333333-3333-4333-8333-333333333333"), key, "a".repeat(64));
+
+        assertThat(redis.getExpire(claimed.redisKey())).isBetween(1L, 60L);
+        idempotencyStore.release(claimed);
+    }
+
+    @Test
+    void databaseRejectsSecondOrderWithSameKey() {
+        String key = UUID.randomUUID().toString();
+        jdbc.update("""
+            insert into orders.orders (id, customer_id, status, currency, total_net, total_vat, total_gross,
+                                       created_at, updated_at, version, idempotency_key, request_hash)
+            values (?, '33333333-3333-4333-8333-333333333333', 'PENDING', 'EUR', 0, 0, 0, now(), now(), 0, ?, ?)
+            """, UUID.randomUUID(), key, "a".repeat(64));
+
+        assertThatThrownBy(() -> jdbc.update("""
+            insert into orders.orders (id, customer_id, status, currency, total_net, total_vat, total_gross,
+                                       created_at, updated_at, version, idempotency_key, request_hash)
+            values (?, '33333333-3333-4333-8333-333333333333', 'PENDING', 'EUR', 0, 0, 0, now(), now(), 0, ?, ?)
+            """, UUID.randomUUID(), key, "a".repeat(64)))
+            .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    private long ordersWithKey(String key) {
+        return jdbc.queryForObject("select count(*) from orders.orders where idempotency_key = ?", Long.class, key);
+    }
+
+    private static String redisKey(String key) {
+        return "idem:33333333-3333-4333-8333-333333333333:" + key;
+    }
+
+    private String requestHashOf(String key) {
+        return jdbc.queryForObject("select request_hash from orders.orders where idempotency_key = ?",
+            String.class, key);
     }
 
     private MockHttpServletResponse postOrder(String key, String body) throws Exception {

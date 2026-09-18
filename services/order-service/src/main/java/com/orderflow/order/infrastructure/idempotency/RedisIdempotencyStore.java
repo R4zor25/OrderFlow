@@ -39,7 +39,7 @@ public class RedisIdempotencyStore {
             UUID.randomUUID().toString(), null));
         try {
             for (int attempt = 0; attempt < 3; attempt++) {
-                Boolean created = redis.opsForValue().setIfAbsent(redisKey, pendingJson, properties.ttl());
+                Boolean created = redis.opsForValue().setIfAbsent(redisKey, pendingJson, properties.inProgressLease());
                 if (Boolean.TRUE.equals(created)) {
                     return new Acquired(redisKey, pendingJson);
                 }

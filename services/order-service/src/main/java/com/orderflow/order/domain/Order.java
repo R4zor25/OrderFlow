@@ -64,6 +64,12 @@ public class Order {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    @Column(name = "idempotency_key", length = 128)
+    private String idempotencyKey;
+
+    @Column(name = "request_hash", length = 64)
+    private String requestHash;
+
     protected Order() {
     }
 
@@ -137,6 +143,17 @@ public class Order {
         status = OrderStatus.CANCELLED;
     }
 
+    public void recordIdempotencyKey(String key, String hash) {
+        if (idempotencyKey != null) {
+            throw new InvalidOrderStateException("Idempotency key is already recorded");
+        }
+        if (key == null || key.isBlank() || key.length() > 128 || hash == null || hash.length() != 64) {
+            throw new InvalidOrderException("Idempotency key needs 1 to 128 characters and a 64-character hash");
+        }
+        idempotencyKey = key;
+        requestHash = hash;
+    }
+
     private static void requireTime(Instant now) {
         if (now == null) {
             throw new InvalidOrderException("Transition time is required");
@@ -188,6 +205,14 @@ public class Order {
 
     public String getRejectionReason() {
         return rejectionReason;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public String getRequestHash() {
+        return requestHash;
     }
 
     public List<OrderLine> getLines() {

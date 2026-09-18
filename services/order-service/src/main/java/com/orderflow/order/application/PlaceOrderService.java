@@ -34,7 +34,7 @@ public class PlaceOrderService {
         this.clock = clock;
     }
 
-    public PlaceOrderResult place(PlaceOrderCommand command) {
+    public PlaceOrderResult place(PlaceOrderCommand command, IdempotencyKey idempotency) {
         if (command == null || command.customerId() == null || command.lines() == null
             || command.lines().isEmpty()) {
             throw new InvalidOrderException("Customer and at least one order line are required");
@@ -46,7 +46,7 @@ public class PlaceOrderService {
             .toList();
         QuoteResponse quote = pricing.quote(new QuoteRequest(customer.getCustomerGroupCode(), quoteLines));
         List<Order.PricedLine> pricedLines = verifiedLines(command, customer, quote);
-        return persistence.persist(customer, pricedLines, quote.totalVat(), Instant.now(clock));
+        return persistence.persist(customer, pricedLines, quote.totalVat(), Instant.now(clock), idempotency);
     }
 
     private List<Order.PricedLine> verifiedLines(PlaceOrderCommand command, Customer customer, QuoteResponse quote) {

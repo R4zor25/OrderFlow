@@ -47,4 +47,30 @@ class OrderTest {
         ), new BigDecimal("0.00"), Instant.now()))
             .isInstanceOf(InvalidOrderException.class);
     }
+
+    @Test
+    void recordsIdempotencyKeyOnce() {
+        Order order = Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 1, new BigDecimal("84.90"))), new BigDecimal("22.92"), Instant.now());
+
+        order.recordIdempotencyKey("key-1", "a".repeat(64));
+
+        assertThat(order.getIdempotencyKey()).isEqualTo("key-1");
+        assertThat(order.getRequestHash()).isEqualTo("a".repeat(64));
+        assertThatThrownBy(() -> order.recordIdempotencyKey("key-2", "b".repeat(64)))
+            .isInstanceOf(InvalidOrderStateException.class);
+    }
+
+    @Test
+    void rejectsInvalidIdempotencyKeyOrHash() {
+        Order order = Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 1, new BigDecimal("84.90"))), new BigDecimal("22.92"), Instant.now());
+
+        assertThatThrownBy(() -> order.recordIdempotencyKey(" ", "a".repeat(64)))
+            .isInstanceOf(InvalidOrderException.class);
+        assertThatThrownBy(() -> order.recordIdempotencyKey("k".repeat(129), "a".repeat(64)))
+            .isInstanceOf(InvalidOrderException.class);
+        assertThatThrownBy(() -> order.recordIdempotencyKey("key-1", "a".repeat(63)))
+            .isInstanceOf(InvalidOrderException.class);
+    }
 }

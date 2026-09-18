@@ -35,6 +35,7 @@ class PlaceOrderServiceTest {
 
     private static final UUID CUSTOMER_ID = UUID.fromString("33333333-3333-4333-8333-333333333333");
     private static final Instant NOW = Instant.parse("2026-10-01T10:15:31Z");
+    private static final IdempotencyKey KEY = new IdempotencyKey("key-1", "a".repeat(64));
 
     private final CustomerRepository customers = mock(CustomerRepository.class);
     private final PricingGateway pricing = mock(PricingGateway.class);
@@ -49,9 +50,9 @@ class PlaceOrderServiceTest {
         when(pricing.quote(any())).thenReturn(validQuote());
         var expected = new PlaceOrderResult(UUID.randomUUID(), OrderStatus.PENDING, "EUR",
             new BigDecimal("169.80"), new BigDecimal("45.85"), new BigDecimal("215.65"));
-        when(persistence.persist(any(), any(), any(), any())).thenReturn(expected);
+        when(persistence.persist(any(), any(), any(), any(), any())).thenReturn(expected);
 
-        PlaceOrderResult actual = service.place(command());
+        PlaceOrderResult actual = service.place(command(), KEY);
 
         assertThat(actual).isEqualTo(expected);
         ArgumentCaptor<QuoteRequest> sentQuote = ArgumentCaptor.forClass(QuoteRequest.class);
@@ -62,16 +63,16 @@ class PlaceOrderServiceTest {
             argThat(lines -> lines.size() == 1 && lines.getFirst().sku().equals("CHAIR-001")
                 && lines.getFirst().quantity() == 2
                 && lines.getFirst().unitPriceNet().compareTo(new BigDecimal("84.90")) == 0),
-            eq(new BigDecimal("45.85")), eq(NOW));
+            eq(new BigDecimal("45.85")), eq(NOW), eq(KEY));
     }
 
     @Test
     void doesNotCallPricingWhenCustomerDoesNotExist() {
         when(customers.findById(CUSTOMER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.place(command())).isInstanceOf(CustomerNotFoundException.class);
+        assertThatThrownBy(() -> service.place(command(), KEY)).isInstanceOf(CustomerNotFoundException.class);
         verify(pricing, never()).quote(any());
-        verify(persistence, never()).persist(any(), any(), any(), any());
+        verify(persistence, never()).persist(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -79,8 +80,8 @@ class PlaceOrderServiceTest {
         when(customers.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer()));
         when(pricing.quote(any())).thenThrow(new PricingUnavailableException("Unavailable", new RuntimeException()));
 
-        assertThatThrownBy(() -> service.place(command())).isInstanceOf(PricingUnavailableException.class);
-        verify(persistence, never()).persist(any(), any(), any(), any());
+        assertThatThrownBy(() -> service.place(command(), KEY)).isInstanceOf(PricingUnavailableException.class);
+        verify(persistence, never()).persist(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -90,8 +91,8 @@ class PlaceOrderServiceTest {
         when(pricing.quote(any())).thenReturn(new QuoteResponse("B2B_STANDARD", "EUR", quote.lines(),
             new BigDecimal("170.00"), quote.totalVat(), quote.totalGross(), quote.quotedAt()));
 
-        assertThatThrownBy(() -> service.place(command())).isInstanceOf(PricingUnavailableException.class);
-        verify(persistence, never()).persist(any(), any(), any(), any());
+        assertThatThrownBy(() -> service.place(command(), KEY)).isInstanceOf(PricingUnavailableException.class);
+        verify(persistence, never()).persist(any(), any(), any(), any(), any());
     }
 
     private static Customer customer() {
