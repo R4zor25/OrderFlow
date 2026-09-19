@@ -201,10 +201,28 @@ def describe_service(target, service, runner):
     return states[0]
 
 
-def describe_task(target, service, arn, runner):
+def require_revision(target, service, arn):
     prefix = target.task_prefix(service)
     if not arn.startswith(prefix) or not re.fullmatch(r"[1-9][0-9]*", arn[len(prefix):]):
         raise DeployError("Task definition ARN must identify this project's application and a positive revision.")
+
+
+def latest_task(target, service, runner):
+    # Terraform registers configuration changes as new revisions without updating the service,
+    # so the newest ACTIVE revision of the family is the recipe that carries them.
+    task = aws(target, runner, "ecs", "describe-task-definition",
+               "--task-definition", f"{target.project}-{service}").get("taskDefinition", {})
+    arn = task.get("taskDefinitionArn", "")
+    prefix = target.task_prefix(service)
+    if (task.get("status") != "ACTIVE" or not arn.startswith(prefix)
+            or not re.fullmatch(r"[1-9][0-9]*", arn[len(prefix):])):
+        raise DeployError("Latest task definition of the application family is missing or invalid.")
+    validate_task(task, service, target)
+    return task, arn
+
+
+def describe_task(target, service, arn, runner):
+    require_revision(target, service, arn)
     task = aws(target, runner, "ecs", "describe-task-definition", "--task-definition", arn).get("taskDefinition", {})
     if task.get("status") != "ACTIVE" or task.get("taskDefinitionArn") != arn:
         raise DeployError("Requested task definition is missing or inactive.")
@@ -238,10 +256,10 @@ def write_summary(rows, path):
     def clean(value):
         return re.sub(r"[^a-zA-Z0-9_./:@ =-]", "?", str(value))
     with path.open("a") as output:
-        output.write("\n## Application release\n\n| Service | Digest | Previous revision | Requested revision | Status |\n|---|---|---|---|---|\n")
+        output.write("\n## Application release\n\n| Service | Digest | Previous revision | Recipe revision | Requested revision | Status |\n|---|---|---|---|---|---|\n")
         for row in rows:
             output.write("| " + " | ".join(clean(row.get(k, "-")) for k in
-                         ("service", "digest", "previous", "requested", "status")) + " |\n")
+                         ("service", "digest", "previous", "recipe", "requested", "status")) + " |\n")
 
 
 def deploy_all(target, sha, runner, summary_path):
@@ -255,10 +273,12 @@ def deploy_all(target, sha, runner, summary_path):
         for row in rows:
             s = row["service"]
             state = describe_service(target, s, runner)
-            arn = state.get("taskDefinition", "")
-            assert_stable(state, arn)
-            recipes[s] = render_task(describe_task(target, s, arn, runner), s, images[s], target)
-            row.update(previous=arn, digest=images[s].split("@")[1])
+            running = state.get("taskDefinition", "")
+            assert_stable(state, running)
+            require_revision(target, s, running)
+            recipe, recipe_arn = latest_task(target, s, runner)
+            recipes[s] = render_task(recipe, s, images[s], target)
+            row.update(previous=running, recipe=recipe_arn, digest=images[s].split("@")[1])
         for row in rows:
             current = row
             s = row["service"]

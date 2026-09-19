@@ -189,10 +189,12 @@ reasons/logs and ALB target health, then test catalog/order requests. An ALB DNS
 output during bootstrap is not proof of a running application.
 
 Application services ignore Terraform changes to `task_definition` so a later
-CI-selected revision is preserved. Changing `image_tag` alone registers new task
-definitions but **does not update existing application services**. Future deployment
-must select the new revision explicitly; first deployment from zero tasks must
-also activate desired count. Other service configuration changes remain managed.
+CI-selected revision is preserved. Changing `image_tag` or application configuration
+registers new task definitions but **does not update existing application services**.
+The next application deploy renders from the newest revision of each family, so
+Terraform configuration reaches the services then; old revisions stay ACTIVE
+(`skip_destroy`) for rollback. First deployment from zero tasks must also activate
+desired count. Other service configuration changes remain managed.
 
 The Compose smoke script uses SQL access to check inventory/notifications. It
 cannot connect from the Mac directly to private RDS; cloud smoke needs a separate

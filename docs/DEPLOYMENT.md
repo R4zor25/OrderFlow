@@ -48,9 +48,9 @@ Cluster name must equal the project prefix. Role ARN must identify `<project>-gi
    ```
    The order should be accepted (202) and later listed as CONFIRMED.
 
-Known limitation: the deploy helper renders each new revision from the service's running task definition. Environment or secrets added later in Terraform (for example the Keycloak wiring) reach an application only through activation from Terraform's revision or a rollback to a new Terraform revision, not through a later application deploy.
+The deploy helper renders each new revision from the latest ACTIVE revision of the application's task-definition family and replaces only the image. A Terraform change to an application's environment, secrets or resources registers a new revision; the next application deploy carries it out. To roll it out immediately, dispatch a deploy of the currently running SHA. The run summary shows which revision served as the recipe. Terraform keeps old application revisions ACTIVE (`skip_destroy`), so a rollback to an earlier revision stays possible.
 
-Keep `runtime_enabled=true` in subsequent Terraform inputs while the runtime should remain active. Changing it back to false stops the services. The pipeline never changes desired counts or Terraform state. `image_tag` changes alone do not replace the application's selected task revision because Terraform ignores application `task_definition` drift.
+Keep `runtime_enabled=true` in subsequent Terraform inputs while the runtime should remain active. Changing it back to false stops the services. The pipeline never changes desired counts or Terraform state. `image_tag` changes alone do not replace the application's selected task revision because Terraform ignores application `task_definition` drift. The next application deploy renders from the newest revision, so configuration registered by Terraform is not lost.
 
 ## Later deployment
 
@@ -58,7 +58,7 @@ Dispatch from **main**, operation **deploy**. The source is that dispatch's `git
 
 All four Maven builds and container tests must pass. Every image must exist in ECR with an inspected Linux ARM64 configuration before the helper registers or updates any ECS service. Images use immutable full SHA tags; task definitions select the corresponding digest. Authentication, network and repository errors are failures, not a reason to rebuild an image as if it were missing.
 
-Preflight requires all four application services to be active, nonzero and stable. A running deployment or disabled runtime rejects the operation before the first mutation. Deployment order is catalog → inventory → order → notification. Existing secrets, environment, ports, roles and resources are preserved; only the main application image changes. New task revisions have Project and ManagedBy tags.
+Preflight requires all four application services to be active, nonzero and stable. The running revision only has to be stable; it may already be INACTIVE. A running deployment or disabled runtime rejects the operation before the first mutation. Deployment order is catalog → inventory → order → notification. Existing secrets, environment, ports, roles and resources are preserved; only the main application image changes. New task revisions have Project and ManagedBy tags.
 
 After each update the helper waits for stability and checks that the requested task revision is PRIMARY/COMPLETED, running count equals desired count, pending count is zero and no older deployment remains. An ECS circuit-breaker rollback to the old stable version leaves the workflow **failed**. See [ECS circuit-breaker behavior](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html).
 

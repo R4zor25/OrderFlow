@@ -60,6 +60,10 @@ run "bootstrap_runtime" {
     error_message = "Database passwords must only be injected from SSM secrets."
   }
   assert {
+    condition     = alltrue([for t in aws_ecs_task_definition.application : t.skip_destroy])
+    error_message = "Application task definitions must keep old revisions ACTIVE for rollback."
+  }
+  assert {
     condition     = (alltrue([for name, t in aws_ecs_task_definition.application : jsondecode(t.container_definitions)[0].image == "${aws_ecr_repository.service[name].repository_url}:${var.image_tag}" && jsondecode(t.container_definitions)[0].stopTimeout == 30 && jsondecode(t.container_definitions)[0].memory == (name == "notification-service" ? 512 : 768) && strcontains(jsondecode(t.container_definitions)[0].healthCheck.command[1], "/health/liveness")]))
     error_message = "Application image SHA, memory and liveness must match runtime contracts."
   }

@@ -57,6 +57,9 @@ class FakeRunner:
         self.wait_error = None
         self.task_change = None
         self.state_revision = {s: 1 for s in d.SERVICES}
+        self.latest_revision = {s: 1 for s in d.SERVICES}
+        self.latest_change = None
+        self.running_inactive = False
 
     def run(self, args):
         self.calls.append(args)
@@ -81,9 +84,15 @@ class FakeRunner:
                                      'rolloutState':'IN_PROGRESS' if s==self.unstable_service else 'COMPLETED'}]}
             return json.dumps({'services':[state], 'failures':[]})
         if action == 'describe-task-definition':
-            arn = args[args.index('--task-definition')+1]
-            s = next(s for s in d.SERVICES if arn.startswith(TARGET.task_prefix(s)))
-            task = recipe(s,int(arn.rsplit(':',1)[1]))
+            requested = args[args.index('--task-definition')+1]
+            family = next((s for s in d.SERVICES if requested == 'orderflow-' + s), None)
+            if family is not None:
+                task = recipe(family, self.latest_revision[family])
+                if self.latest_change: self.latest_change(task)
+                return json.dumps({'taskDefinition':task})
+            s = next(s for s in d.SERVICES if requested.startswith(TARGET.task_prefix(s)))
+            task = recipe(s,int(requested.rsplit(':',1)[1]))
+            if self.running_inactive: task['status'] = 'INACTIVE'
             if self.task_change: self.task_change(task)
             return json.dumps({'taskDefinition':task})
         if action == 'register-task-definition':
@@ -229,6 +238,38 @@ class HelperBehaviorTests(unittest.TestCase):
             self.runner=FakeRunner(); self.runner.wait_error=error; self.runner.old_after_wait=error is None
             with self.assertRaises(d.DeployError): d.deploy_all(TARGET,SHA,self.runner,self.summary)
             self.assertEqual(len(self.runner.mutations()),2)
+
+    def test_deploy_renders_from_latest_family_revision(self):
+        self.runner.latest_revision['order-service'] = 5
+        self.runner.latest_change = lambda t: t['containerDefinitions'][0]['environment'].append(
+            {'name': 'NEW_SETTING', 'value': 'from-terraform'}) if t['family'] == 'orderflow-order-service' else None
+
+        d.deploy_all(TARGET,SHA,self.runner,self.summary)
+
+        registered=[json.loads(a[a.index('--cli-input-json')+1]) for a in self.runner.mutations()
+                    if a[2]=='register-task-definition']
+        order=next(t for t in registered if t['family']=='orderflow-order-service')
+        names=[e['name'] for e in order['containerDefinitions'][0]['environment']]
+        self.assertIn('NEW_SETTING',names)
+        text=self.summary.read_text()
+        self.assertIn('Recipe revision',text)
+        self.assertIn(TARGET.task_prefix('order-service')+'5',text)
+
+    def test_inactive_running_revision_does_not_block_deploy(self):
+        self.runner.running_inactive=True
+
+        d.deploy_all(TARGET,SHA,self.runner,self.summary)
+
+        self.assertEqual(len([a for a in self.runner.mutations() if a[2]=='update-service']),4)
+
+    def test_invalid_latest_revision_prevents_every_mutation(self):
+        for change in (lambda t: t.update(taskRoleArn='arn:aws:iam::123456789012:role/other'),
+                       lambda t: t.update(status='INACTIVE')):
+            self.runner=FakeRunner()
+            self.runner.latest_change=change
+            with self.assertRaisesRegex(d.DeployError,'Latest task definition|Task recipe'):
+                d.deploy_all(TARGET,SHA,self.runner,self.summary)
+            self.assertEqual(self.runner.mutations(),[])
 
     def test_valid_rollback_does_not_register_or_change_counts(self):
         d.rollback_one(TARGET,'order-service',TARGET.task_prefix('order-service')+'7',self.runner,self.summary)

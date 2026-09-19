@@ -93,6 +93,8 @@ resource "aws_ecs_task_definition" "application" {
   memory                   = "1024"
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
+  # Rollback targets earlier revisions, and the deploy helper renders from the newest one.
+  skip_destroy = true
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = "ARM64"
