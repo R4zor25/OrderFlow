@@ -43,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -385,6 +386,52 @@ class PlaceOrderIntegrationTest {
         assertThat(response.getHeader("Location")).isEqualTo("/api/v1/orders/" + winner);
         assertThat(ordersWithKey(key)).isEqualTo(1);
         assertThat(redis.opsForValue().get(redisKey(key))).contains("COMPLETED");
+    }
+
+    @Test
+    void rejectsMoreThanHundredLines() throws Exception {
+        MockHttpServletResponse response = postOrder(UUID.randomUUID().toString(), linesBody(101));
+
+        assertThat(response.getStatus()).isEqualTo(422);
+        assertThat(response.getContentAsString()).contains("/problems/invalid-order");
+        verify(pricing, never()).quote(any(QuoteRequest.class));
+    }
+
+    @Test
+    void acceptsHundredLines() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenAnswer(invocation -> quoteFor((QuoteRequest) invocation.getArgument(0)));
+
+        assertThat(postOrder(UUID.randomUUID().toString(), linesBody(100)).getStatus()).isEqualTo(202);
+    }
+
+    @Test
+    void rejectsOversizedBodyBeforeAuthentication() throws Exception {
+        var response = mvc.perform(post("/api/v1/orders")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON).content("x".repeat(70_000)))
+            .andReturn().getResponse();
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(response.getContentType()).isEqualTo("application/problem+json");
+        assertThat(response.getContentAsString()).contains("/problems/payload-too-large");
+        verify(pricing, never()).quote(any(QuoteRequest.class));
+    }
+
+    private static String linesBody(int count) {
+        return java.util.stream.IntStream.rangeClosed(1, count)
+            .mapToObj(i -> "{\"sku\":\"SKU-%03d\",\"quantity\":1}".formatted(i))
+            .collect(java.util.stream.Collectors.joining(",", "{\"lines\":[", "]}"));
+    }
+
+    private static QuoteResponse quoteFor(QuoteRequest request) {
+        var lines = request.lines().stream()
+            .map(line -> new QuoteLineResponse(line.sku(), line.quantity(), new BigDecimal("1.00"),
+                new BigDecimal("1.00"), new BigDecimal("0.27"), null, "BASE"))
+            .toList();
+        BigDecimal net = new BigDecimal(lines.size()).setScale(2);
+        BigDecimal vat = new BigDecimal("0.27").multiply(new BigDecimal(lines.size()));
+        return new QuoteResponse("B2B_STANDARD", "EUR", lines, net, vat, net.add(vat),
+            Instant.parse("2026-10-01T10:15:30Z"));
     }
 
     private long ordersWithKey(String key) {
