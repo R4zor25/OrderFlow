@@ -100,11 +100,15 @@ application code makes no AWS API calls. No GitHub deploy role exists yet.
 
 Kafka (`apache/kafka:4.3.1`) is one combined KRaft node, replication factor one,
 heap `-Xms256m -Xmx512m`, advertised broker `kafka:9092`, controller `localhost:9093`.
-Spring's topic configuration creates the two business topics and DLTs; Kafka
-broker auto-topic creation is disabled. Redis uses `redis:7.4.11-bookworm`.
-Both run on ephemeral task storage. Replacing Kafka loses events/offsets;
-replacing Redis loses cache and idempotency keys. Stop the demo for infrastructure
-updates and use durable managed alternatives for production.
+Kafka broker auto-topic creation is disabled. A non-essential `kafka-topics` init
+container in the Kafka task creates the two business topics and their DLTs once the
+broker is healthy, so a replaced broker has its topics before the applications
+restart; Spring's topic configuration creates the same topics locally. Redis uses
+`redis:7.4.11-bookworm`. Kafka and Redis redeploy without overlap (0/100): a short
+outage instead of two instances behind one alias. Both run on ephemeral task storage.
+Replacing Kafka loses events/offsets; replacing Redis loses cache and idempotency keys.
+Stop the demo for infrastructure updates and use durable managed alternatives for
+production.
 
 ## Local checks without AWS credentials
 

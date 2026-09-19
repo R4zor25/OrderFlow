@@ -38,6 +38,27 @@ locals {
       environment    = {}
     }
   }
+  kafka_topics_command = "set -e; for topic in orders.order-events.v1 orders.order-events.v1.DLT inventory.stock-events.v1 inventory.stock-events.v1.DLT; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic $topic --partitions 3 --replication-factor 1; done"
+  # Auto-creation is off, so a replaced broker needs its topics before the applications restart.
+  kafka_topics_container = {
+    name        = "kafka-topics"
+    image       = local.infrastructure.kafka.image
+    essential   = false
+    cpu         = 128
+    memory      = 192
+    entryPoint  = ["sh", "-c"]
+    command     = [local.kafka_topics_command]
+    environment = [{ name = "KAFKA_HEAP_OPTS", value = "-Xmx128m" }]
+    dependsOn   = [{ containerName = "kafka", condition = "HEALTHY" }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.runtime["kafka"].name
+        awslogs-region        = var.region
+        awslogs-stream-prefix = "topics"
+      }
+    }
+  }
 }
 
 resource "aws_ecs_task_definition" "infrastructure" {
@@ -53,7 +74,7 @@ resource "aws_ecs_task_definition" "infrastructure" {
     operating_system_family = "LINUX"
     cpu_architecture        = "ARM64"
   }
-  container_definitions = jsonencode([{
+  container_definitions = jsonencode(concat([{
     name         = each.key
     image        = each.value.image
     essential    = true
@@ -72,7 +93,7 @@ resource "aws_ecs_task_definition" "infrastructure" {
         awslogs-stream-prefix = "app"
       }
     }
-  }])
+  }], [for c in [local.kafka_topics_container] : c if each.key == "kafka"]))
 }
 
 resource "aws_ecs_service" "infrastructure" {
@@ -84,6 +105,9 @@ resource "aws_ecs_service" "infrastructure" {
   force_new_deployment = var.runtime_enabled
   launch_type          = "FARGATE"
   platform_version     = "1.4.0"
+  # Two brokers or Redis instances behind one alias would split events and idempotency keys.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
   network_configuration {
     subnets          = sort(data.aws_subnets.default.ids)
     security_groups  = [aws_security_group.tasks.id]

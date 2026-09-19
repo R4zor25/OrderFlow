@@ -125,6 +125,26 @@ run "bootstrap_runtime" {
     error_message = "Infrastructure must use the pinned TCP images and the single-node ephemeral Kafka contract."
   }
   assert {
+    condition = (alltrue([for s in aws_ecs_service.infrastructure : s.deployment_minimum_healthy_percent == 0 && s.deployment_maximum_percent == 100])
+    && alltrue([for s in aws_ecs_service.application : s.deployment_minimum_healthy_percent == 100 && s.deployment_maximum_percent == 200]))
+    error_message = "Kafka and Redis must redeploy without two instances serving the same alias."
+  }
+  assert {
+    condition = (length(jsondecode(aws_ecs_task_definition.infrastructure["redis"].container_definitions)) == 1 &&
+      length(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)) == 2 &&
+      jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].name == "kafka-topics" &&
+      jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].essential == false &&
+      jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].dependsOn[0].containerName == "kafka" &&
+      jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].dependsOn[0].condition == "HEALTHY" &&
+      jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].image == jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[0].image &&
+      alltrue([for topic in ["orders.order-events.v1", "orders.order-events.v1.DLT", "inventory.stock-events.v1", "inventory.stock-events.v1.DLT"] :
+      strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], topic)]) &&
+      strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--if-not-exists") &&
+      strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--partitions 3") &&
+    jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[0].memory + jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].memory < 1024)
+    error_message = "The Kafka task must create every business and DLT topic after the broker is healthy."
+  }
+  assert {
     condition = (alltrue([for name, rule in aws_lb_listener_rule.application :
       rule.priority == lookup({ catalog-pricing-service = 10, order-service = 20, inventory-service = 30, notification-service = 40 }, name) &&
       rule.action[0].target_group_arn == aws_lb_target_group.application[name].arn &&
