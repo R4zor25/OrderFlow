@@ -283,6 +283,9 @@ def deploy_all(target, sha, runner, summary_path):
             current = row
             s = row["service"]
             row["status"] = "registering"
+            # A Terraform apply during the release would otherwise be buried under a revision built from the old recipe.
+            if latest_task(target, s, runner)[1] != row["recipe"]:
+                raise DeployError("Task definition family changed during deploy; dispatch the release again.")
             response = aws(target, runner, "ecs", "register-task-definition", "--cli-input-json", json.dumps(recipes[s]))
             arn = response.get("taskDefinition", {}).get("taskDefinitionArn", "")
             # Validate AWS's registration result before selecting the revision.

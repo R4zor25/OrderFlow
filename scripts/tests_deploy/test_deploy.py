@@ -60,6 +60,7 @@ class FakeRunner:
         self.latest_revision = {s: 1 for s in d.SERVICES}
         self.latest_change = None
         self.running_inactive = False
+        self.move_latest_after_update = None
 
     def run(self, args):
         self.calls.append(args)
@@ -102,6 +103,10 @@ class FakeRunner:
         if action == 'update-service':
             s = args[args.index('--service')+1].removeprefix('orderflow-')
             if s == self.fail_update: raise d.CommandError('InvalidParameterException')
+            if self.move_latest_after_update:
+                moved = self.move_latest_after_update
+                self.latest_revision[moved] += 1
+                self.move_latest_after_update = None
             if not self.old_after_wait:
                 self.state_revision[s] = int(args[args.index('--task-definition')+1].rsplit(':',1)[1])
             return '{}'
@@ -270,6 +275,16 @@ class HelperBehaviorTests(unittest.TestCase):
             with self.assertRaisesRegex(d.DeployError,'Latest task definition|Task recipe'):
                 d.deploy_all(TARGET,SHA,self.runner,self.summary)
             self.assertEqual(self.runner.mutations(),[])
+
+    def test_family_changed_during_deploy_stops_before_registering_a_stale_recipe(self):
+        self.runner.move_latest_after_update='notification-service'
+
+        with self.assertRaisesRegex(d.DeployError,'changed during deploy'):
+            d.deploy_all(TARGET,SHA,self.runner,self.summary)
+
+        registered=[json.loads(a[a.index('--cli-input-json')+1])['family'] for a in self.runner.mutations()
+                    if a[2]=='register-task-definition']
+        self.assertNotIn('orderflow-notification-service',registered)
 
     def test_valid_rollback_does_not_register_or_change_counts(self):
         d.rollback_one(TARGET,'order-service',TARGET.task_prefix('order-service')+'7',self.runner,self.summary)
