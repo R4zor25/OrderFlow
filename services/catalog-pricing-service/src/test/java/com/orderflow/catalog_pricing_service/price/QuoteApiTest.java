@@ -240,4 +240,28 @@ class QuoteApiTest {
             .mapToObj(i -> "{\"minQty\":%d,\"unitPriceNet\":10.00,\"validFrom\":\"2020-01-01\"}".formatted(i))
             .collect(java.util.stream.Collectors.joining(",", "{\"customerGroup\":\"B2B_GOLD\",\"tiers\":[", "]}"));
     }
+
+    @Test
+    void rejectsDuplicateSkusInQuote() throws Exception {
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","lines":[
+                      {"sku":"CHAIR-001","quantity":10},
+                      {"sku":"CHAIR-001","quantity":10}
+                    ]}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.violations.distinctSkus").value("SKUs must be unique"));
+    }
+
+    @Test
+    void rejectsQuantityAboveLimitInQuote() throws Exception {
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":10001}]}
+                    """))
+            .andExpect(status().isBadRequest());
+    }
 }
