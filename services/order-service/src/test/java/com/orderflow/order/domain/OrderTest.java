@@ -73,4 +73,28 @@ class OrderTest {
         assertThatThrownBy(() -> order.recordIdempotencyKey("key-1", "a".repeat(63)))
             .isInstanceOf(InvalidOrderException.class);
     }
+
+    @Test
+    void rejectsLineTotalAboveSupportedAmount() {
+        assertThatThrownBy(() -> Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 2, new BigDecimal("9999999999.99"))), new BigDecimal("0.00"), Instant.now()))
+            .isInstanceOf(InvalidOrderException.class)
+            .hasMessage("Order line total exceeds the supported amount");
+    }
+
+    @Test
+    void rejectsGrossTotalAboveSupportedAmount() {
+        assertThatThrownBy(() -> Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 1, new BigDecimal("9999999999.00"))), new BigDecimal("1.00"), Instant.now()))
+            .isInstanceOf(InvalidOrderException.class)
+            .hasMessage("Order total exceeds the supported amount");
+    }
+
+    @Test
+    void acceptsTotalsAtTheSupportedAmount() {
+        Order order = Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 1, new BigDecimal("9999999998.99"))), new BigDecimal("1.00"), Instant.now());
+
+        assertThat(order.getTotalGross()).isEqualByComparingTo("9999999999.99");
+    }
 }

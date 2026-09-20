@@ -434,6 +434,24 @@ class PlaceOrderIntegrationTest {
             Instant.parse("2026-10-01T10:15:30Z"));
     }
 
+    @Test
+    void rejectsOrderWhoseTotalDoesNotFit() throws Exception {
+        long beforeOrders = jdbc.queryForObject("select count(*) from orders.orders", Long.class);
+        long beforeEvents = jdbc.queryForObject("select count(*) from orders.outbox_event", Long.class);
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(new QuoteResponse("B2B_STANDARD", "EUR", List.of(
+            new QuoteLineResponse("CHAIR-001", 2, new BigDecimal("9999999999.99"),
+                new BigDecimal("19999999999.98"), new BigDecimal("0.00"), null, "BASE")),
+            new BigDecimal("19999999999.98"), new BigDecimal("0.00"), new BigDecimal("19999999999.98"),
+            Instant.parse("2026-10-01T10:15:30Z")));
+
+        MockHttpServletResponse response = postOrder(UUID.randomUUID().toString(), requestBody());
+
+        assertThat(response.getStatus()).isEqualTo(422);
+        assertThat(response.getContentAsString()).contains("/problems/invalid-order");
+        assertThat(jdbc.queryForObject("select count(*) from orders.orders", Long.class)).isEqualTo(beforeOrders);
+        assertThat(jdbc.queryForObject("select count(*) from orders.outbox_event", Long.class)).isEqualTo(beforeEvents);
+    }
+
     private long ordersWithKey(String key) {
         return jdbc.queryForObject("select count(*) from orders.orders where idempotency_key = ?", Long.class, key);
     }

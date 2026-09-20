@@ -198,6 +198,35 @@ class OrderControllerTest {
             .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ck_secret_detail"))));
     }
 
+    @Test
+    void rejectsDuplicateSkus() throws Exception {
+        mvc.perform(post("/api/v1/orders")
+                .principal(customer(CUSTOMER))
+                .header("Idempotency-Key", "request-7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"lines":[{"sku":"CHAIR-001","quantity":1},{"sku":"CHAIR-001","quantity":2}]}
+                    """))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.type").value("/problems/invalid-order"))
+            .andExpect(jsonPath("$.violations.distinctSkus").value("SKUs must be unique"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void rejectsQuantityAboveLimit() throws Exception {
+        mvc.perform(post("/api/v1/orders")
+                .principal(customer(CUSTOMER))
+                .header("Idempotency-Key", "request-8")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"lines":[{"sku":"CHAIR-001","quantity":10001}]}
+                    """))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.violations['lines[0].quantity']").exists());
+        verifyNoInteractions(service);
+    }
+
     private static JwtAuthenticationToken customer(String customerId) {
         var jwt = Jwt.withTokenValue("token").header("alg", "none").subject("user")
             .claim("customer_id", customerId)

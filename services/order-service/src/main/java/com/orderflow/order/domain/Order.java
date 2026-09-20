@@ -25,6 +25,9 @@ import jakarta.persistence.Version;
 @Table(name = "orders", schema = "orders")
 public class Order {
 
+    // Order amounts are stored as numeric(12,2).
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999.99");
+
     @Id
     private UUID id;
 
@@ -96,6 +99,10 @@ public class Order {
         for (PricedLine line : pricedLines) {
             order.addLine(line);
         }
+        if (order.totalNet.compareTo(MAX_AMOUNT) > 0 || order.totalVat.compareTo(MAX_AMOUNT) > 0
+            || order.totalGross.compareTo(MAX_AMOUNT) > 0) {
+            throw new InvalidOrderException("Order total exceeds the supported amount");
+        }
         return order;
     }
 
@@ -107,6 +114,9 @@ public class Order {
         }
         OrderLine orderLine = new OrderLine(this, line.sku(), line.quantity(),
             line.unitPriceNet().setScale(2, RoundingMode.UNNECESSARY));
+        if (orderLine.getLineTotalNet().compareTo(MAX_AMOUNT) > 0) {
+            throw new InvalidOrderException("Order line total exceeds the supported amount");
+        }
         lines.add(orderLine);
         totalNet = totalNet.add(orderLine.getLineTotalNet());
         totalGross = totalNet.add(totalVat);
