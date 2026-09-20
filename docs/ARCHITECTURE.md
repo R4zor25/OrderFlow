@@ -334,7 +334,7 @@ Why choreography and not an orchestrator: two participants and three outcomes. A
 API conventions:
 
 - DTOs are Java records in an `api` package; entities never leave the service layer.
-- Validation errors and business errors map to `ProblemDetail` in one `@RestControllerAdvice`, with a stable `type` URI per error (`https://orderflow.dev/problems/insufficient-stock` etc.).
+- Errors map to `ProblemDetail` (`application/problem+json`) in one `@RestControllerAdvice` per service, with a stable relative `type` URI per error (`/problems/insufficient-stock` etc.). Malformed requests (bad JSON, missing header or parameter, wrong type) are 400 `/problems/bad-request` in order-service and 400 `/problems/validation` in catalog-pricing-service. Bean Validation failures carry a `violations` map (field → message): order-service answers them with 422 `/problems/invalid-order` (a business-level rejection of the order), catalog-pricing-service with 400 `/problems/validation`. An unreachable database is 503 `/problems/database-unavailable` with `Retry-After`.
 - Pagination via `Pageable`, max page size 100.
 - Request limits: order lines, quote lines and price tiers are capped at 100 per request. Request bodies above 64 KiB (`order.http.max-request-body-size`, `catalog.http.max-request-body-size`) are rejected with 413 `/problems/payload-too-large` before parsing when the length is known, and cut off (400) when it is not.
 - OpenAPI UI at `/swagger-ui.html` on Spring services.
