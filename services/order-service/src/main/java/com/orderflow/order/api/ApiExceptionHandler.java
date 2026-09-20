@@ -1,6 +1,7 @@
 package com.orderflow.order.api;
 
 import java.net.URI;
+import java.sql.SQLException;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -15,6 +16,7 @@ import com.orderflow.order.infrastructure.pricing.PricingRequestRejectedExceptio
 import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.persistence.OptimisticLockException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -116,11 +118,30 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail dataIntegrity(DataIntegrityViolationException exception) {
-        // The constraint message can contain stored values, so only the cause type is logged.
-        log.error("Unexpected data integrity violation cause={}",
+        // The constraint message can contain stored values, so only schema identifiers are logged.
+        log.error("Unexpected data integrity violation sqlState={} constraint={} cause={}",
+            sqlState(exception), constraintName(exception),
             exception.getMostSpecificCause().getClass().getSimpleName());
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "data-integrity", "Data integrity violation",
             "The request could not be stored");
+    }
+
+    private static String sqlState(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState();
+            }
+        }
+        return "unknown";
+    }
+
+    private static String constraintName(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation && violation.getConstraintName() != null) {
+                return violation.getConstraintName();
+            }
+        }
+        return "unknown";
     }
 
     @ExceptionHandler(IdempotencyException.class)

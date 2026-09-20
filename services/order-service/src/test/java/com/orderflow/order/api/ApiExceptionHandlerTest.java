@@ -1,10 +1,16 @@
 package com.orderflow.order.api;
 
 import java.net.URI;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.UUID;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.InvalidOrderStateException;
@@ -18,6 +24,7 @@ import org.springframework.http.HttpStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ApiExceptionHandlerTest {
 
     private final ApiExceptionHandler handler = new ApiExceptionHandler(new PricingResilienceProperties(
@@ -75,5 +82,20 @@ class ApiExceptionHandlerTest {
 
         assertThat(problem.getStatus()).isEqualTo(404);
         assertThat(problem.getType()).isEqualTo(URI.create("/problems/customer-not-found"));
+    }
+
+    @Test
+    void logsSchemaIdentifiersButNotStoredValuesForDataIntegrityViolation(CapturedOutput output) {
+        var violation = new DataIntegrityViolationException("could not execute statement",
+            new ConstraintViolationException("could not execute statement",
+                new SQLException("ERROR: duplicate key value violates unique constraint; Key (email)=(buyer@example.test)",
+                    "23505"),
+                "uq_customer_email"));
+
+        var problem = handler.dataIntegrity(violation);
+
+        assertThat(problem.getStatus()).isEqualTo(500);
+        assertThat(output.getOut()).contains("sqlState=23505").contains("constraint=uq_customer_email")
+            .doesNotContain("buyer@example.test");
     }
 }
