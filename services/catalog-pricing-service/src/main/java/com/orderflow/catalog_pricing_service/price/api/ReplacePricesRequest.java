@@ -9,6 +9,6 @@ import jakarta.validation.constraints.Size;
 
 public record ReplacePricesRequest(
     @NotBlank @Size(max = 32) String customerGroup,
-    @NotNull List<@NotNull @Valid PriceTierRequest> tiers
+    @NotNull @Size(max = 100) List<@NotNull @Valid PriceTierRequest> tiers
 ) {
 }

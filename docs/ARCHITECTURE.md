@@ -336,6 +336,7 @@ API conventions:
 - DTOs are Java records in an `api` package; entities never leave the service layer.
 - Validation errors and business errors map to `ProblemDetail` in one `@RestControllerAdvice`, with a stable `type` URI per error (`https://orderflow.dev/problems/insufficient-stock` etc.).
 - Pagination via `Pageable`, max page size 100.
+- Request limits: order lines, quote lines and price tiers are capped at 100 per request. Request bodies above 64 KiB (`order.http.max-request-body-size`, `catalog.http.max-request-body-size`) are rejected with 413 `/problems/payload-too-large` before parsing when the length is known, and cut off (400) when it is not.
 - OpenAPI UI at `/swagger-ui.html` on Spring services.
 
 Configuration:

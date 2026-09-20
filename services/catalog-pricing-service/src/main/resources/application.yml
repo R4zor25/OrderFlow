@@ -36,6 +36,10 @@ spring:
     default-schema: catalog
     locations: classpath:db/migration/catalog
 
+catalog:
+  http:
+    max-request-body-size: 64KB
+
 server:
   port: 8081
   shutdown: graceful

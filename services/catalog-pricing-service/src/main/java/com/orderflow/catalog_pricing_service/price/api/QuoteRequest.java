@@ -10,6 +10,6 @@ import jakarta.validation.constraints.Size;
 
 public record QuoteRequest(
     @NotBlank @Size(max = 32) String customerGroup,
-    @NotEmpty List<@NotNull @Valid QuoteLineRequest> lines
+    @NotEmpty @Size(max = 100) List<@NotNull @Valid QuoteLineRequest> lines
 ) {
 }

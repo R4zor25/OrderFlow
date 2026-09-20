@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -200,5 +201,43 @@ class QuoteApiTest {
                     """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.type").value("/problems/validation"));
+    }
+
+    @Test
+    void rejectsQuoteWithMoreThanHundredLines() throws Exception {
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(quoteBody(101)))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsPriceListWithMoreThanHundredTiers() throws Exception {
+        mvc.perform(put("/api/v1/products/SIZE-TEST-NONE/prices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(tiersBody(101)))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsOversizedQuoteBodyBeforeAuthentication() throws Exception {
+        mvc.perform(post("/api/v1/quotes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("x".repeat(70_000)))
+            .andExpect(status().is(413))
+            .andExpect(content().contentType("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("/problems/payload-too-large"));
+    }
+
+    private static String quoteBody(int lines) {
+        return java.util.stream.IntStream.rangeClosed(1, lines)
+            .mapToObj(i -> "{\"sku\":\"SKU-%03d\",\"quantity\":1}".formatted(i))
+            .collect(java.util.stream.Collectors.joining(",", "{\"customerGroup\":\"B2B_GOLD\",\"lines\":[", "]}"));
+    }
+
+    private static String tiersBody(int tiers) {
+        return java.util.stream.IntStream.rangeClosed(1, tiers)
+            .mapToObj(i -> "{\"minQty\":%d,\"unitPriceNet\":10.00,\"validFrom\":\"2020-01-01\"}".formatted(i))
+            .collect(java.util.stream.Collectors.joining(",", "{\"customerGroup\":\"B2B_GOLD\",\"tiers\":[", "]}"));
     }
 }
