@@ -18,6 +18,7 @@ import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntry
 
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -263,5 +264,28 @@ class QuoteApiTest {
                     {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":10001}]}
                     """))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsUnknownCustomerGroupBeforeCaching() throws Exception {
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"NOPE","lines":[{"sku":"CHAIR-001","quantity":1}]}
+                    """))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.type").value("/problems/unknown-customer-group"));
+        verify(priceListEntryRepository, never()).findAllByCustomerGroupCodeAndSkuIn(eq("NOPE"), anyCollection());
+    }
+
+    @Test
+    void rejectsPriceListForUnknownCustomerGroup() throws Exception {
+        mvc.perform(put("/api/v1/products/CHAIR-001/prices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"NOPE","tiers":[{"minQty":1,"unitPriceNet":10.00,"validFrom":"2020-01-01"}]}
+                    """))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.type").value("/problems/unknown-customer-group"));
     }
 }

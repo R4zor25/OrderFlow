@@ -18,4 +18,7 @@ public interface PriceListEntryRepository extends JpaRepository<PriceListEntry, 
     @Modifying
     @Query("delete from PriceListEntry entry where entry.customerGroupCode = :group and entry.sku = :sku")
     void deleteForGroupAndSku(@Param("group") String group, @Param("sku") String sku);
+
+    @Query(value = "select exists (select 1 from catalog.customer_group where code = :code)", nativeQuery = true)
+    boolean customerGroupExists(@Param("code") String code);
 }

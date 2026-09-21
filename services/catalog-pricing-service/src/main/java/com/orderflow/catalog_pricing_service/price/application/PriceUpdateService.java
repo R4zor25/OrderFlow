@@ -32,6 +32,9 @@ public class PriceUpdateService {
         if (products.findBySku(sku).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found");
         }
+        if (!prices.customerGroupExists(group)) {
+            throw new UnknownCustomerGroupException(group);
+        }
         validate(tiers);
         prices.deleteForGroupAndSku(group, sku);
         prices.saveAll(tiers.stream()

@@ -128,7 +128,7 @@ Quote request/response:
 }
 ```
 
-Caching: the tier list per `(customerGroup, sku)` is stored in Redis through a programmatic cache-aside lookup, with JSON serialization and a 10-minute TTL. Missing keys from one quote are loaded in one database query, then cached individually, including empty tier lists. `PUT /api/v1/products/{sku}/prices` replaces one group’s tiers and evicts its cache key after the database transaction commits. The TTL bounds staleness if an invalidation is missed.
+Caching: the tier list per `(customerGroup, sku)` is stored in Redis through a programmatic cache-aside lookup, with JSON serialization and a 10-minute TTL. Missing keys from one quote are loaded in one database query, then cached individually, including empty tier lists. `PUT /api/v1/products/{sku}/prices` replaces one group’s tiers and evicts its cache key after the database transaction commits. The TTL bounds staleness if an invalidation is missed. An unknown `customerGroup` is rejected with 422 `/problems/unknown-customer-group` before any cache lookup, both in quotes and in price-list updates, so group names cannot create unbounded cache keys.
 
 ### 4.2 order-service (Spring Boot, port 8082, schema `orders`)
 
