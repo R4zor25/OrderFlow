@@ -7,6 +7,7 @@ locals {
       memory         = 768
       image          = "apache/kafka:4.3.1"
       health_command = "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"
+      command        = null
       environment = {
         KAFKA_NODE_ID                                          = "1"
         KAFKA_PROCESS_ROLES                                    = "broker,controller"
@@ -28,6 +29,7 @@ locals {
         KAFKA_HEAP_OPTS                                        = "-Xms256m -Xmx512m"
       }
     }
+    # Every Redis key has a TTL, so only expiring keys are evicted when memory runs out.
     redis = {
       alias          = "redis"
       port           = 6379
@@ -35,6 +37,7 @@ locals {
       memory         = 384
       image          = "redis:7.4.11-bookworm"
       health_command = "redis-cli ping | grep -q PONG"
+      command        = ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
       environment    = {}
     }
   }
@@ -77,6 +80,7 @@ resource "aws_ecs_task_definition" "infrastructure" {
   container_definitions = jsonencode(concat([{
     name         = each.key
     image        = each.value.image
+    command      = each.value.command
     essential    = true
     cpu          = 256
     memory       = each.value.memory
