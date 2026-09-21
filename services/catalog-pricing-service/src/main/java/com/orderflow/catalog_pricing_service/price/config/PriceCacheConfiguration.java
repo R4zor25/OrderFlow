@@ -26,7 +26,6 @@ public class PriceCacheConfiguration {
             .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(serializer));
         return RedisCacheManager.builder(connectionFactory)
             .cacheDefaults(defaults)
-            .transactionAware()
             .build();
     }
 }

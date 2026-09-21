@@ -76,4 +76,8 @@ public class PriceListEntry {
     public LocalDate getValidTo() {
         return validTo;
     }
+
+    public PriceTier toTier() {
+        return new PriceTier(customerGroupCode, sku, minQty, unitPriceNet, validFrom, validTo);
+    }
 }

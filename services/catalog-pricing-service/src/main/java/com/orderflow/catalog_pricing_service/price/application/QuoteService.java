@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
 import com.orderflow.catalog_pricing_service.price.domain.PriceCalculator;
@@ -41,7 +40,6 @@ public class QuoteService {
         this.priceListEntries = priceListEntries;
     }
 
-    @Transactional(readOnly = true)
     public QuoteResult quote(QuoteInput input) {
         if (!priceListEntries.customerGroupExists(input.customerGroup())) {
             throw new UnknownCustomerGroupException(input.customerGroup());

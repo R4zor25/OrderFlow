@@ -16,8 +16,8 @@ spring:
       validation-timeout: 1000
   data:
     redis:
-      connect-timeout: 2s
-      timeout: 2s
+      connect-timeout: 500ms
+      timeout: 500ms
   jpa:
     open-in-view: false
     hibernate:

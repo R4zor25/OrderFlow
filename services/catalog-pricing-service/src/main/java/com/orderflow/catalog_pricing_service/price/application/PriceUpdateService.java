@@ -38,11 +38,11 @@ public class PriceUpdateService {
         }
         validate(tiers);
         prices.deleteForGroupAndSku(group, sku);
-        prices.saveAll(tiers.stream()
+        List<PriceListEntry> saved = prices.saveAll(tiers.stream()
             .map(tier -> PriceListEntry.create(group, sku, tier.minQty(), tier.unitPriceNet(),
                 tier.validFrom(), tier.validTo()))
             .toList());
-        cache.evict(group, sku);
+        cache.replaced(group, sku, saved.stream().map(PriceListEntry::toTier).toList());
     }
 
     private void validate(List<TierInput> tiers) {

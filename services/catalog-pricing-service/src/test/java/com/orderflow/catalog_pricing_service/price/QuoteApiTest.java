@@ -1,5 +1,7 @@
 package com.orderflow.catalog_pricing_service.price;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,13 +13,18 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -287,5 +294,26 @@ class QuoteApiTest {
                     """))
             .andExpect(status().isUnprocessableContent())
             .andExpect(jsonPath("$.type").value("/problems/unknown-customer-group"));
+    }
+
+    @MockitoSpyBean
+    private PriceTierCache priceTierCache;
+
+    @Test
+    void quoteDoesNotHoldADatabaseTransactionWhileUsingTheCache() throws Exception {
+        var transactionActive = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            transactionActive.set(TransactionSynchronizationManager.isActualTransactionActive());
+            return invocation.callRealMethod();
+        }).when(priceTierCache).find(any(), any());
+
+        mvc.perform(post("/api/v1/quotes").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_pricing.quote")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"customerGroup":"B2B_GOLD","lines":[{"sku":"CHAIR-001","quantity":1}]}
+                    """))
+            .andExpect(status().isOk());
+
+        assertThat(transactionActive).isFalse();
     }
 }
