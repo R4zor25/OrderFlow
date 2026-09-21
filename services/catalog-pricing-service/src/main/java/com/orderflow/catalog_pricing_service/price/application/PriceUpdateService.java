@@ -29,7 +29,8 @@ public class PriceUpdateService {
 
     @Transactional
     public void replace(String sku, String group, List<TierInput> tiers) {
-        if (products.findBySku(sku).isEmpty()) {
+        // The row lock serializes replacements of one product, so a second request deletes the first one's tiers.
+        if (products.findLockedBySku(sku).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found");
         }
         if (!prices.customerGroupExists(group)) {

@@ -128,7 +128,7 @@ Quote request/response:
 }
 ```
 
-Caching: the tier list per `(customerGroup, sku)` is stored in Redis through a programmatic cache-aside lookup, with JSON serialization and a 10-minute TTL. Missing keys from one quote are loaded in one database query, then cached individually, including empty tier lists. `PUT /api/v1/products/{sku}/prices` replaces one group’s tiers and evicts its cache key after the database transaction commits. The TTL bounds staleness if an invalidation is missed. An unknown `customerGroup` is rejected with 422 `/problems/unknown-customer-group` before any cache lookup, both in quotes and in price-list updates, so group names cannot create unbounded cache keys.
+Caching: the tier list per `(customerGroup, sku)` is stored in Redis through a programmatic cache-aside lookup, with JSON serialization and a 10-minute TTL. Missing keys from one quote are loaded in one database query, then cached individually, including empty tier lists. `PUT /api/v1/products/{sku}/prices` replaces one group’s tiers and evicts its cache key after the database transaction commits. The TTL bounds staleness if an invalidation is missed. An unknown `customerGroup` is rejected with 422 `/problems/unknown-customer-group` before any cache lookup, both in quotes and in price-list updates, so group names cannot create unbounded cache keys. Price-list replacement locks the product row (`PESSIMISTIC_WRITE`, which Hibernate issues as `SELECT … FOR NO KEY UPDATE` on PostgreSQL), so concurrent `PUT /prices` requests for the same SKU run one after another and never leave the union of two tier lists behind.
 
 ### 4.2 order-service (Spring Boot, port 8082, schema `orders`)
 
