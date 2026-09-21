@@ -29,7 +29,7 @@ locals {
         KAFKA_HEAP_OPTS                                        = "-Xms256m -Xmx512m"
       }
     }
-    # Every Redis key has a TTL, so only expiring keys are evicted when memory runs out.
+    # volatile-lru evicts only expiring keys; every key has a TTL, so a write never hits the memory limit.
     redis = {
       alias          = "redis"
       port           = 6379
