@@ -12,16 +12,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.kafka.KafkaContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
     "inventory.messaging.enabled=true",
-    "spring.kafka.listener.auto-startup=false",
-    "management.endpoint.health.group.readiness.include=readinessState,db,kafka"
+    "spring.kafka.listener.auto-startup=false"
 })
 @Import({PostgresTestConfiguration.class, KafkaTestConfiguration.class})
+@ActiveProfiles("local")
 @DirtiesContext
 class InventoryHealthIntegrationTest {
 
@@ -35,19 +36,20 @@ class InventoryHealthIntegrationTest {
         .connectTimeout(Duration.ofSeconds(2)).build();
 
     @Test
-    void kafkaOutageRejectsReadinessWhileLivenessStaysUp() throws Exception {
-        assertProbe("liveness", 200, "UP");
-        assertProbe("readiness", 200, "UP");
+    void kafkaOutageShowsInFullHealthWhileProbesStayUp() throws Exception {
+        assertProbe("/actuator/health/liveness", 200, "UP");
+        assertProbe("/actuator/health/readiness", 200, "UP");
 
         kafka.stop();
 
-        assertProbe("readiness", 503, "DOWN");
-        assertProbe("liveness", 200, "UP");
+        assertProbe("/actuator/health", 503, "DOWN");
+        assertProbe("/actuator/health/readiness", 200, "UP");
+        assertProbe("/actuator/health/liveness", 200, "UP");
     }
 
-    private void assertProbe(String group, int statusCode, String status) throws Exception {
+    private void assertProbe(String path, int statusCode, String status) throws Exception {
         var request = HttpRequest.newBuilder(
-            URI.create("http://localhost:" + port + "/actuator/health/" + group))
+            URI.create("http://localhost:" + port + path))
             .timeout(Duration.ofSeconds(6)).GET().build();
         var response = http.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(statusCode);

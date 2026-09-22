@@ -41,35 +41,45 @@ class HealthProbesIntegrationTest {
     private GenericContainer<?> redis;
 
     @Test
-    void essentialDependencyFailuresStopReadinessWithoutStoppingLivenessOrExposingDetails() {
-        assertProbe("liveness", 200, "UP");
-        assertProbe("readiness", 200, "UP");
+    void dependencyFailuresShowInFullHealthWithoutStoppingProbesOrExposingDetails() {
+        assertProbe("/actuator/health/liveness", 200, "UP");
+        assertProbe("/actuator/health/readiness", 200, "UP");
         var docker = DockerClientFactory.instance().client();
         docker.pauseContainerCmd(redis.getContainerId()).exec();
         try {
-            assertProbe("readiness", 503, "DOWN");
-            assertProbe("liveness", 200, "UP");
+            assertProbe("/actuator/health/readiness", 200, "UP");
+            assertHealth(503, "DOWN");
+            assertProbe("/actuator/health/liveness", 200, "UP");
         }
         finally {
             docker.unpauseContainerCmd(redis.getContainerId()).exec();
         }
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-            assertProbe("readiness", 200, "UP"));
+            assertHealth(200, "UP"));
 
         broker.stop();
         long started = System.nanoTime();
-        assertProbe("readiness", 503, "DOWN");
+        assertHealth(503, "DOWN");
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
-        assertProbe("liveness", 200, "UP");
+        assertProbe("/actuator/health/readiness", 200, "UP");
+        assertProbe("/actuator/health/liveness", 200, "UP");
     }
 
-    private void assertProbe(String group, int expectedStatus, String status) {
+    private void assertHealth(int expectedStatus, String status) {
+        assertBody("/actuator/health", expectedStatus, "{\"groups\":[\"liveness\",\"readiness\"],\"status\":\"" + status + "\"}");
+    }
+
+    private void assertProbe(String path, int expectedStatus, String status) {
+        assertBody(path, expectedStatus, "{\"status\":\"" + status + "\"}");
+    }
+
+    private void assertBody(String path, int expectedStatus, String body) {
         RestClient.create("http://localhost:" + port).get()
-            .uri("/actuator/health/" + group)
+            .uri(path)
             .exchange((request, response) -> {
                 assertThat(response.getStatusCode().value()).isEqualTo(expectedStatus);
                 assertThat(new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8))
-                    .isEqualTo("{\"status\":\"" + status + "\"}");
+                    .isEqualTo(body);
                 return null;
             });
     }

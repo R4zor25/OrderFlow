@@ -21,8 +21,3 @@ management:
   tracing:
     sampling:
       probability: 1.0
-  endpoint:
-    health:
-      group:
-        readiness:
-          include: readinessState,db,redis,kafka

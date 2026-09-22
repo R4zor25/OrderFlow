@@ -13,10 +13,3 @@ spring:
         jwt:
           issuer-uri: ${CATALOG_JWT_ISSUER_URI}
           jwk-set-uri: ${CATALOG_JWT_JWK_SET_URI}
-
-management:
-  endpoint:
-    health:
-      group:
-        readiness:
-          include: readinessState,db,redis

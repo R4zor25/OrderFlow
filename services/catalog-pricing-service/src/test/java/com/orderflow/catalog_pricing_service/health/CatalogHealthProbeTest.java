@@ -58,14 +58,14 @@ class CatalogHealthProbeTest {
 
     @Test
     @Order(1)
-    void exposesOnlyProcessStateInLivenessAndRequiredDependenciesInReadiness() throws Exception {
+    void exposesOnlyProcessStateInLivenessAndTheDatabaseInReadiness() throws Exception {
         assertThat(groups.get("liveness")).isNotNull();
         assertThat(groups.get("liveness").isMember("livenessState")).isTrue();
         assertThat(groups.get("liveness").isMember("db")).isFalse();
         assertThat(groups.get("liveness").isMember("redis")).isFalse();
         assertThat(groups.get("readiness").isMember("readinessState")).isTrue();
         assertThat(groups.get("readiness").isMember("db")).isTrue();
-        assertThat(groups.get("readiness").isMember("redis")).isTrue();
+        assertThat(groups.get("readiness").isMember("redis")).isFalse();
         assertProbe("readiness", 200);
         assertProbe("liveness", 200);
     }
@@ -86,15 +86,22 @@ class CatalogHealthProbeTest {
 
     @Test
     @Order(3)
-    void redisOutageStopsReadinessWhileLivenessStaysHealthyAndRecovers() throws Exception {
+    void redisOutageKeepsProbesUpButShowsInFullHealth() throws Exception {
         redis.getDockerClient().pauseContainerCmd(redis.getContainerId()).exec();
         try {
-            assertProbe("readiness", 503);
+            assertProbe("readiness", 200);
             assertProbe("liveness", 200);
+            assertHealth(503);
         } finally {
             redis.getDockerClient().unpauseContainerCmd(redis.getContainerId()).exec();
         }
-        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertProbe("readiness", 200));
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertHealth(200));
+    }
+
+    private void assertHealth(int expectedStatus) throws Exception {
+        HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri("/actuator/health"))
+            .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).as("health: %s", response.body()).isEqualTo(expectedStatus);
     }
 
     private void assertProbe(String group, int expectedStatus) throws Exception {

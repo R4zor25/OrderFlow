@@ -129,14 +129,14 @@ With the `local` profile/environment active, use these endpoints:
 
 | Service | Port | Liveness | Readiness | Readiness dependencies |
 |---|---|---|---|---|
-| catalog-pricing-service | 8081 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Redis |
-| order-service | 8082 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Redis, Kafka |
-| inventory-service | 8083 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL, Kafka |
+| catalog-pricing-service | 8081 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL |
+| order-service | 8082 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL |
+| inventory-service | 8083 | `/actuator/health/liveness` | `/actuator/health/readiness` | PostgreSQL |
 | notification-service | 8084 | `/health/liveness` | `/health/readiness` | PostgreSQL, Kafka |
 
-Healthy probes return HTTP 200 and `{"status":"UP"}`; an unavailable required dependency makes readiness return HTTP 503. Responses hide component and exception details. External dependencies are excluded from liveness. Probe results signal availability; they do not themselves block business endpoints or stop Kafka listeners.
+Healthy probes return HTTP 200 and `{"status":"UP"}`; an unavailable readiness dependency makes readiness return HTTP 503. Responses hide component and exception details. External dependencies are excluded from liveness. Probe results signal availability; they do not themselves block business endpoints or stop Kafka listeners.
 
-The Spring `aws` profiles select the same readiness dependencies as `local`. The base Spring configurations include only application readiness state and the database, supporting contexts with messaging/cache disabled. The Micronaut base configuration disables Kafka consumption and Kafka health; `local` enables both. Other notification deployment configurations must enable both `notification.messaging.enabled` and `kafka.health.enabled`. For Micronaut local runs, select the environment with `MICRONAUT_ENVIRONMENTS=local`.
+Spring readiness is `readinessState,db` in every profile; Redis and Kafka appear only in the full `/actuator/health`, which returns 503 while one of them is down. The AWS load balancer checks liveness, so a dependency outage does not replace tasks. The Micronaut base configuration disables Kafka consumption and Kafka health; `local` enables both. Other notification deployment configurations must enable both `notification.messaging.enabled` and `kafka.health.enabled`. For Micronaut local runs, select the environment with `MICRONAUT_ENVIRONMENTS=local`.
 
 Kafka readiness checks broker metadata availability, not consumer partition assignment or successful event processing. Database pool waits are configured to 2 seconds, validation to 1 second, and Redis/Kafka health waits to 2 seconds. These individual limits are not a strict bound on total readiness response latency.
 

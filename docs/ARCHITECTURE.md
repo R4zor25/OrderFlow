@@ -357,7 +357,7 @@ Security:
 
 Observability:
 
-- Actuator: `health` with `liveness` and `readiness` groups (readiness includes DB and Kafka), `info`, `metrics`, `prometheus`.
+- Actuator: `health` with `liveness` and `readiness` groups, `info`, `metrics`, `prometheus`. The ALB and container health checks use liveness, so a database, Redis or Kafka outage never makes ECS replace healthy tasks; requests meanwhile get the documented 503 ProblemDetails or degrade (outbox, quote from the database). Readiness is `readinessState,db` (used for Compose start-up order). Redis and Kafka state stays visible in the full `/actuator/health` (and Micronaut `/health`) for alerting.
 - Structured JSON logs: Spring uses ECS (`logging.structured.format.console=ecs`), Micronaut uses Logback JSON. Active traced operations include trace/span IDs (Spring `traceId`/`spanId`, Micronaut `mdc.trace_id`/`mdc.span_id`); startup/background logs without an active span may omit them.
 - Spring uses Micrometer Tracing with the OpenTelemetry bridge; observation is enabled on `KafkaTemplate` and listener containers. Micronaut uses its OpenTelemetry Kafka integration and a scoped consumer-processing span around the notification listener.
 - W3C `traceparent`/`tracestate` propagate through HTTP and Kafka. Outbox writers persist active propagation headers atomically; relays restore each event's context before observed publication, detached from scheduler context. Missing/invalid trace metadata starts a new trace.
