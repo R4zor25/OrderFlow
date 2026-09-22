@@ -63,8 +63,6 @@ class ServiceImageTest(unittest.TestCase):
         if service in ('order-service', 'inventory-service'):
             prefix = 'ORDER' if service == 'order-service' else 'INVENTORY'
             env.update({prefix + '_MESSAGING_ENABLED': 'true', prefix + '_OUTBOX_RELAY_ENABLED': 'true'})
-            env['MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE'] = (
-                'readinessState,db,redis,kafka' if prefix == 'ORDER' else 'readinessState,db,kafka')
         args = ['docker', 'create', '--name', name, '--network', self.project + '_default',
                 '--memory', '512m', '--cpus', '1', '-p', f'127.0.0.1::{port}']
         for key, value in env.items():

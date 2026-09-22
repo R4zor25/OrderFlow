@@ -138,11 +138,11 @@ Healthy probes return HTTP 200 and `{"status":"UP"}`; an unavailable readiness d
 
 Spring readiness is `readinessState,db` in every profile; Redis and Kafka appear only in the full `/actuator/health`, which returns 503 while one of them is down. The AWS load balancer checks liveness, so a dependency outage does not replace tasks. The Micronaut base configuration disables Kafka consumption and Kafka health; `local` enables both. Other notification deployment configurations must enable both `notification.messaging.enabled` and `kafka.health.enabled`. For Micronaut local runs, select the environment with `MICRONAUT_ENVIRONMENTS=local`.
 
-Kafka readiness checks broker metadata availability, not consumer partition assignment or successful event processing. Database pool waits are configured to 2 seconds, validation to 1 second, and Redis/Kafka health waits to 2 seconds. These individual limits are not a strict bound on total readiness response latency.
+Kafka health (and notification readiness) checks broker metadata availability, not consumer partition assignment or successful event processing. Database pool waits are configured to 2 seconds, validation to 1 second, and Redis/Kafka health waits to 2 seconds. These individual limits are not a strict bound on total health response latency.
 
 Spring explicitly enables graceful HTTP shutdown with a 20-second timeout **per lifecycle phase**. Micronaut enables graceful shutdown with a 20-second grace period. Integration tests verify that an active HTTP request can finish while application shutdown waits. Total process shutdown may take longer than one grace period.
 
-For deployment, configure the load balancer to check readiness and coordinate target draining with application shutdown. The external container stop timeout must allow the measured total shutdown duration plus margin. ECS and ALB resources are not configured by this change. ALB health thresholds delay target state changes, and ALB may fail open when all targets are unhealthy.
+The AWS load balancer checks liveness; coordinate target draining with application shutdown. The external container stop timeout must allow the measured total shutdown duration plus margin. A task that alone loses its database stays in rotation and answers 503 until it recovers or is replaced. ALB health thresholds delay target state changes, and ALB may fail open when all targets are unhealthy.
 
 
 ## Structured logs and trace propagation
