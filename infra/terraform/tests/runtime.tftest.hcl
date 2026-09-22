@@ -76,7 +76,7 @@ run "bootstrap_runtime" {
     error_message = "Demo task networking must be explicit."
   }
   assert {
-    condition     = (alltrue([for name, g in aws_lb_target_group.application : g.target_type == "ip" && g.port == lookup({ catalog-pricing-service = 8081, order-service = 8082, inventory-service = 8083, notification-service = 8084 }, name) && g.health_check[0].path == (name == "notification-service" ? "/health/readiness" : "/actuator/health/readiness") && g.health_check[0].matcher == "200" && g.deregistration_delay == "30"]))
+    condition     = (alltrue([for name, g in aws_lb_target_group.application : g.target_type == "ip" && g.port == lookup({ catalog-pricing-service = 8081, order-service = 8082, inventory-service = 8083, notification-service = 8084 }, name) && g.health_check[0].path == (name == "notification-service" ? "/health/liveness" : "/actuator/health/liveness") && g.health_check[0].matcher == "200" && g.deregistration_delay == "30"]))
     error_message = "ALB must route only to ready IP targets."
   }
   assert {

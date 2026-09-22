@@ -7,7 +7,7 @@ locals {
       memory         = 768
       db_prefix      = "CATALOG"
       image          = "${aws_ecr_repository.service["catalog-pricing-service"].repository_url}:${var.image_tag}"
-      health_path    = "/actuator/health/readiness"
+      health_path    = "/actuator/health/liveness"
       health_command = "curl -fsS http://localhost:8081/actuator/health/liveness >/dev/null || exit 1"
       priority       = 10
       paths          = ["/api/v1/products", "/api/v1/products/*"]
@@ -27,7 +27,7 @@ locals {
       memory         = 768
       db_prefix      = "ORDER"
       image          = "${aws_ecr_repository.service["order-service"].repository_url}:${var.image_tag}"
-      health_path    = "/actuator/health/readiness"
+      health_path    = "/actuator/health/liveness"
       health_command = "curl -fsS http://localhost:8082/actuator/health/liveness >/dev/null || exit 1"
       priority       = 20
       paths          = ["/api/v1/orders", "/api/v1/orders/*"]
@@ -51,7 +51,7 @@ locals {
       memory         = 768
       db_prefix      = "INVENTORY"
       image          = "${aws_ecr_repository.service["inventory-service"].repository_url}:${var.image_tag}"
-      health_path    = "/actuator/health/readiness"
+      health_path    = "/actuator/health/liveness"
       health_command = "curl -fsS http://localhost:8083/actuator/health/liveness >/dev/null || exit 1"
       priority       = 30
       paths          = ["/api/v1/stock", "/api/v1/stock/*", "/api/v1/reservations"]
@@ -70,7 +70,7 @@ locals {
       memory         = 512
       db_prefix      = "NOTIFICATION"
       image          = "${aws_ecr_repository.service["notification-service"].repository_url}:${var.image_tag}"
-      health_path    = "/health/readiness"
+      health_path    = "/health/liveness"
       health_command = "curl -fsS http://localhost:8084/health/liveness >/dev/null || exit 1"
       priority       = 40
       paths          = ["/api/v1/notifications"]

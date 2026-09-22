@@ -67,9 +67,10 @@ The existing catalog/order APIs keep their original paths; no rewriting occurs.
 
 ## Health and deployment
 
-Container health checks use liveness; ALB target groups use readiness:
-`/actuator/health/readiness` for Spring and `/health/readiness` for Micronaut,
-requiring HTTP 200. Application services have 90 seconds health grace, 100/200
+Container health checks and ALB target groups both use liveness:
+`/actuator/health/liveness` for Spring and `/health/liveness` for Micronaut,
+requiring HTTP 200. Target groups check liveness, so dependency outages do not
+replace tasks. Application services have 90 seconds health grace, 100/200
 healthy deployment percentages and circuit breaker with rollback. Java container
 stop timeout and ALB deregistration delay are both 30 seconds.
 
