@@ -1,6 +1,8 @@
 package com.orderflow.inventory.reservation.infrastructure;
 
+import java.time.Instant;
 import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 import com.orderflow.inventory.reservation.domain.ReservationLine;
@@ -50,5 +52,16 @@ public class ReservationRepository {
             }
         }
         return !lines.isEmpty();
+    }
+
+    public List<ReservationView> findByOrderId(UUID orderId) {
+        return jdbc.query("""
+            select sku, quantity, status, created_at from inventory.reservation
+             where order_id = ? order by sku
+            """, (rs, rowNum) -> new ReservationView(rs.getString("sku"), rs.getInt("quantity"),
+            rs.getString("status"), rs.getTimestamp("created_at").toInstant()), orderId);
+    }
+
+    public record ReservationView(String sku, int quantity, String status, Instant createdAt) {
     }
 }

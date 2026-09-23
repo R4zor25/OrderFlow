@@ -202,11 +202,11 @@ Alternatives: `SELECT ... FOR UPDATE` (pessimistic), JPA `@Version` optimistic l
 
 Endpoints:
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/v1/stock/{sku}` | on_hand, reserved, available |
-| PUT | `/api/v1/stock/{sku}` | Admin restock; resets `low_stock_notified` when above threshold |
-| GET | `/api/v1/reservations?orderId=` | Operational inspection |
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| GET | `/api/v1/stock/{sku}` | `ADMIN` | on_hand, reserved, available; unknown SKU 404 |
+| PUT | `/api/v1/stock/{sku}` | `ADMIN` | Sets `on_hand` with one conditional update (`reserved <= on_hand`); 409 when below `reserved`; resets `low_stock_notified` when available rises above the threshold |
+| GET | `/api/v1/reservations?orderId=` | `ADMIN` | Operational inspection; empty list when the order has none |
 
 Scheduled jobs:
 
@@ -349,6 +349,7 @@ Security:
 - Clients: `orderflow-cli` (public, password grant, used by scripts and demos) and `order-service` (confidential, client credentials, `pricing.quote` scope).
 - The issuer is `http://localhost:8180/realms/orderflow`; inside Compose the service reads the signing keys from the internal address `http://keycloak:8080/...`, so the issuer claim and the key endpoint differ on purpose.
 - catalog-pricing-service is a resource server with the same validation as order-service. Product reads and actuator endpoints are public; `POST /products` and `PUT /products/{sku}/prices` require the `ADMIN` role; `POST /quotes` requires the `pricing.quote` scope, which only the order-service client credentials token carries.
+- inventory-service is a resource server with the same validation; its stock and reservation endpoints require `ADMIN`, actuator stays public.
 - In both services, missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role or scope returns 403 (`/problems/forbidden`).
 - A customer asking for another customer's order gets 404 (`/problems/order-not-found`), so existence is not revealed; listing with another customer's `customerId` is 403. Admins can read and cancel any order but cannot place one.
 - order-service calls catalog `/api/v1/quotes` with an OAuth2 client-credentials token of the order-service client (scope `pricing.quote`), cached and refreshed by Spring Security; the token request uses the pricing connect/read timeouts. Token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.

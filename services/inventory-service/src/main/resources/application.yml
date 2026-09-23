@@ -1,4 +1,10 @@
 spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${INVENTORY_JWT_ISSUER_URI:http://localhost:8180/realms/orderflow}
+          jwk-set-uri: ${INVENTORY_JWT_JWK_SET_URI:http://localhost:8180/realms/orderflow/protocol/openid-connect/certs}
   threads:
     virtual:
       enabled: true
