@@ -4,6 +4,8 @@ import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
+import io.micronaut.security.annotation.Secured;
+import io.micronaut.security.rules.SecurityRule;
 import io.micronaut.runtime.graceful.GracefulShutdownCapable;
 import io.micronaut.runtime.graceful.GracefulShutdownConfiguration;
 import io.micronaut.runtime.server.EmbeddedServer;
@@ -78,6 +80,7 @@ class NotificationGracefulShutdownTest {
     }
 
     @Controller("/test/slow")
+    @Secured(SecurityRule.IS_ANONYMOUS)
     @Requires(property = "notification.test.slow-request", value = "true")
     static class SlowController {
         private final InFlightRequest flight;

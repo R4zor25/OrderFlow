@@ -1,3 +1,14 @@
+micronaut:
+  security:
+    token:
+      jwt:
+        signatures:
+          jwks:
+            keycloak:
+              url: ${NOTIFICATION_JWT_JWK_SET_URI}
+        claims-validators:
+          issuer: ${NOTIFICATION_JWT_ISSUER_URI}
+
 datasources:
   default:
     url: ${NOTIFICATION_DB_URL}

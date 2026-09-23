@@ -60,4 +60,6 @@ public interface NotificationRepository extends CrudRepository<NotificationRow, 
             UPDATE notifications.notification SET next_attempt_at = :leaseUntil WHERE id IN (:ids)
             """, nativeQuery = true)
     int extendLease(List<UUID> ids, Instant leaseUntil);
+
+    List<NotificationRow> findByOrderIdOrderByCreatedAt(UUID orderId);
 }

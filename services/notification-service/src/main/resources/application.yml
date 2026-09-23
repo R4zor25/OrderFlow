@@ -10,6 +10,16 @@ micronaut:
       grace-period: 20s
   server:
     port: 8084
+  security:
+    authentication: bearer
+    token:
+      jwt:
+        signatures:
+          jwks:
+            keycloak:
+              url: "${NOTIFICATION_JWT_JWK_SET_URI:`http://localhost:8180/realms/orderflow/protocol/openid-connect/certs`}"
+        claims-validators:
+          issuer: "${NOTIFICATION_JWT_ISSUER_URI:`http://localhost:8180/realms/orderflow`}"
 
 notification:
   channel: LOG

@@ -45,7 +45,9 @@ class NotificationAwsIntegrationTest {
                     "NOTIFICATION_DB_URL", postgres.getJdbcUrl() + "&currentSchema=notifications",
                     "NOTIFICATION_DB_USERNAME", postgres.getUsername(),
                     "NOTIFICATION_DB_PASSWORD", postgres.getPassword(),
-                    "KAFKA_BOOTSTRAP", kafka.getBootstrapServers());
+                    "KAFKA_BOOTSTRAP", kafka.getBootstrapServers(),
+                    "NOTIFICATION_JWT_ISSUER_URI", "http://alb.example/realms/orderflow",
+                    "NOTIFICATION_JWT_JWK_SET_URI", "http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs");
             var server = ApplicationContext.run(EmbeddedServer.class, properties, "aws");
             try (var context = server.getApplicationContext(); var client = HttpClient.newHttpClient()) {
                 var environment = context.getEnvironment();

@@ -221,7 +221,7 @@ Responsibility: turn business events into customer and ops notifications. Uses M
 - Micronaut Data JDBC + Flyway, table `notification(id uuid pk, event_id uuid unique, order_id uuid null, type, recipient, subject, body, channel, created_at, status, attempts, next_attempt_at, sent_at, last_error)`
 - Delivery is at-least-once: the listener inserts a `PENDING` row (`ON CONFLICT (event_id) DO NOTHING`, so a redelivered event creates nothing new) and sends immediately; success marks it `SENT`. Failures and crashes leave it `PENDING`. A retry job claims due rows with `FOR UPDATE SKIP LOCKED` and a two-minute lease, sends outside the transaction and backs off exponentially from 30 s up to 1 h. After 10 attempts the row becomes `FAILED` with an ERROR log; an operator can re-queue it with `UPDATE … SET status = 'PENDING', attempts = 0, next_attempt_at = now()`. A crash after the SMTP server accepted a message but before it was marked `SENT` sends it twice.
 - Channel `SMTP` (Micronaut Email + JavaMail to Mailpit) locally, channel `LOG` on AWS, selected by config
-- `GET /api/v1/notifications?orderId=` for inspection
+- `GET /api/v1/notifications?orderId=` for inspection, `ADMIN` only (Micronaut Security JWT with the same Keycloak issuer and `roles` claim); the response omits the message body. Micronaut's default 400/401/403 responses carry no ProblemDetail body.
 - Customer email arrives inside the event payload (event-carried state transfer), so this service never calls order-service
 
 ## 5. Messaging
@@ -350,6 +350,7 @@ Security:
 - The issuer is `http://localhost:8180/realms/orderflow`; inside Compose the service reads the signing keys from the internal address `http://keycloak:8080/...`, so the issuer claim and the key endpoint differ on purpose.
 - catalog-pricing-service is a resource server with the same validation as order-service. Product reads and actuator endpoints are public; `POST /products` and `PUT /products/{sku}/prices` require the `ADMIN` role; `POST /quotes` requires the `pricing.quote` scope, which only the order-service client credentials token carries.
 - inventory-service is a resource server with the same validation; its stock and reservation endpoints require `ADMIN`, actuator stays public.
+- notification-service validates the same tokens with Micronaut Security (JWKS) and requires `ADMIN` for its lookup; `/health` stays anonymous.
 - In both services, missing or invalid tokens return a 401 ProblemDetail (`/problems/unauthorized`, with a `WWW-Authenticate: Bearer` header); a valid token without the required role or scope returns 403 (`/problems/forbidden`).
 - A customer asking for another customer's order gets 404 (`/problems/order-not-found`), so existence is not revealed; listing with another customer's `customerId` is 403. Admins can read and cancel any order but cannot place one.
 - order-service calls catalog `/api/v1/quotes` with an OAuth2 client-credentials token of the order-service client (scope `pricing.quote`), cached and refreshed by Spring Security; the token request uses the pricing connect/read timeouts. Token or 401/403 failures count as pricing unavailable (503), are not retried, and are recorded by the circuit breaker.
