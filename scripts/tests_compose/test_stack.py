@@ -128,15 +128,19 @@ class ComposeStackTest(unittest.TestCase):
         confirmed = self.await_result(lambda: (details if (details := self.read_json(
             order_base + '/api/v1/orders/' + order_id, token))['status'] == 'CONFIRMED' else None))
         self.assertEqual(confirmed['lines'][0]['quantity'], 2)
-        reservation = self.invoke('exec', '-T', 'postgres', 'psql', '-U', 'orderflow', '-d', 'orderflow', '-Atc',
-            f"select quantity || ':' || status from inventory.reservation where order_id='{order_id}'::uuid")
+        admin = self.password_token('admin')
+        reservations = self.read_json(self.base_url('inventory-service', 8083)
+                                      + '/api/v1/reservations?orderId=' + order_id, admin)
+        reservation = ','.join(f"{line['quantity']}:{line['status']}" for line in reservations)
         self.assertEqual(reservation, '2:RESERVED')
         mail_base = self.base_url('mailpit', 8025)
         mail = self.await_result(lambda: next((message for message in self.read_json(mail_base + '/api/v1/messages')['messages']
             if message['Subject'] == 'Order confirmed ' + order_id), None))
         self.assertEqual(mail['To'][0]['Address'], 'consumer.one@example.test')
-        rows = self.invoke('exec', '-T', 'postgres', 'psql', '-U', 'orderflow', '-d', 'orderflow', '-Atc',
-            f"select count(*) from notifications.notification where order_id='{order_id}'::uuid and type='OrderConfirmed' and channel='SMTP'")
+        notifications = self.await_result(lambda: [row for row in self.read_json(
+            self.base_url('notification-service', 8084) + '/api/v1/notifications?orderId=' + order_id, admin)
+            if row['type'] == 'OrderConfirmed' and row['channel'] == 'SMTP'])
+        rows = str(len(notifications))
         self.assertEqual(rows, '1')
         report = {'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                   'up_build_wait_seconds': elapsed, 'order_id': order_id, 'initial_status': placed['status'],

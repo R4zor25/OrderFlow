@@ -268,8 +268,10 @@ python3 -m unittest discover -s scripts/tests_compose -p test_scenarios.py -v
 
 The smoke script checks B2C/B2B pricing, HTTP idempotency, confirmation, stock
 rejection, cancellation and notification persistence. Mailpit capture checks are
-optional when running the script directly. Stock/reservation and notification
-read APIs are not implemented yet, so these observations use read-only SQL.
+optional when running the script directly. The scripts still observe stock,
+reservations and notifications with read-only SQL; the admin inspection
+endpoints (`/api/v1/stock`, `/api/v1/reservations`, `/api/v1/notifications`)
+need an `ADMIN` token.
 
 The disposable integration test also prepares a ten-unit fixture and runs
 `scripts/oversell-test.sh`: 50 parallel orders must produce exactly ten

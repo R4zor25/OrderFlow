@@ -245,6 +245,13 @@ run "bootstrap_runtime" {
     error_message = "Catalog and order must trust the Keycloak issuer and fetch keys internally; order gets the client secret."
   }
   assert {
+    condition = alltrue([for name, prefix in { inventory-service = "INVENTORY", notification-service = "NOTIFICATION" } :
+      contains([for e in jsondecode(aws_ecs_task_definition.application[name].container_definitions)[0].environment : "${e.name}=${e.value}"], "${prefix}_JWT_ISSUER_URI=http://${aws_lb.main.dns_name}/realms/orderflow") &&
+      contains([for e in jsondecode(aws_ecs_task_definition.application[name].container_definitions)[0].environment : "${e.name}=${e.value}"], "${prefix}_JWT_JWK_SET_URI=http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs")
+    ])
+    error_message = "Inventory and notification must trust the Keycloak issuer and fetch keys internally."
+  }
+  assert {
     condition = (output.cluster_name == aws_ecs_cluster.main.name && output.alb_dns_name == aws_lb.main.dns_name && !output.runtime_enabled && output.image_tag == var.image_tag &&
       toset(keys(output.service_names)) == toset(["catalog-pricing-service", "order-service", "inventory-service", "notification-service", "kafka", "redis"]) &&
     output.task_definition_arns == { for name, t in merge(aws_ecs_task_definition.application, aws_ecs_task_definition.infrastructure) : name => t.arn })

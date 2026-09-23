@@ -61,6 +61,8 @@ locals {
         SPRING_PROFILES_ACTIVE         = "aws"
         KAFKA_BOOTSTRAP                = "kafka:9092"
         INVENTORY_OUTBOX_RELAY_ENABLED = "true"
+        INVENTORY_JWT_ISSUER_URI       = local.keycloak_issuer
+        INVENTORY_JWT_JWK_SET_URI      = "${local.keycloak_internal}/certs"
       }
     }
     "notification-service" = {
@@ -75,10 +77,12 @@ locals {
       priority       = 40
       paths          = ["/api/v1/notifications"]
       environment = {
-        NOTIFICATION_DB_URL      = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=notifications&sslmode=require"
-        NOTIFICATION_DB_USERNAME = aws_db_instance.main.username
-        MICRONAUT_ENVIRONMENTS   = "aws"
-        KAFKA_BOOTSTRAP          = "kafka:9092"
+        NOTIFICATION_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=notifications&sslmode=require"
+        NOTIFICATION_DB_USERNAME     = aws_db_instance.main.username
+        MICRONAUT_ENVIRONMENTS       = "aws"
+        KAFKA_BOOTSTRAP              = "kafka:9092"
+        NOTIFICATION_JWT_ISSUER_URI  = local.keycloak_issuer
+        NOTIFICATION_JWT_JWK_SET_URI = "${local.keycloak_internal}/certs"
       }
     }
   }
