@@ -123,6 +123,12 @@ curl -i -X POST http://localhost:8082/api/v1/orders -H "Authorization: Bearer $T
 A customer sees only their own orders: another customer's order ID returns 404, and listing with another customer's `customerId` returns 403. The `admin` user can read and cancel any order.
 
 
+## API documentation
+
+Each Spring service publishes its OpenAPI description at `/v3/api-docs` and a Swagger UI at `/swagger-ui.html`
+(catalog 8081, order 8082, inventory 8083), without a token. Use the UI's Authorize button with a Keycloak access
+token to call protected endpoints.
+
 ## Health probes and shutdown
 
 With the `local` profile/environment active, use these endpoints:

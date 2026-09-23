@@ -25,6 +25,7 @@ public class SecurityConfiguration {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(requests -> requests
                 .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/*").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/products").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/v1/products/*/prices").hasRole("ADMIN")

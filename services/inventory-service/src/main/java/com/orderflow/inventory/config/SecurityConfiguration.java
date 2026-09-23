@@ -23,6 +23,7 @@ public class SecurityConfiguration {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(requests -> requests
                 .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                 .requestMatchers("/api/v1/stock/**", "/api/v1/reservations").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .oauth2ResourceServer(resourceServer -> resourceServer
