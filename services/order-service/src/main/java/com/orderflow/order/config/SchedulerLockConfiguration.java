@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @Configuration(proxyBeanMethods = false)
 @EnableSchedulerLock(defaultLockAtMostFor = "PT5M")
-@EnableConfigurationProperties(OrderSagaProperties.class)
+@EnableConfigurationProperties({OrderSagaProperties.class, RetentionProperties.class})
 public class SchedulerLockConfiguration {
 
     @Bean

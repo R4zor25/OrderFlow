@@ -89,9 +89,12 @@ order:
       retry-interval: 1s
       retry-count: 3
       dlt-send-timeout: 10s
+  retention:
+    cron: "0 0 3 * * *"
+    outbox: 7d
+    processed-events: 14d
+    batch-size: 1000
   outbox:
-    cleanup:
-      cron: "0 0 3 * * *"
     relay:
       ack-timeout: 10s
   idempotency:
