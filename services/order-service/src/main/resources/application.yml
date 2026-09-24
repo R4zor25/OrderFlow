@@ -47,6 +47,8 @@ spring:
     default-schema: orders
     locations: classpath:db/migration/orders
   kafka:
+    admin:
+      modify-topic-configs: true
     consumer:
       group-id: order-service
       key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer

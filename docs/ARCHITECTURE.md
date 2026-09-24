@@ -212,6 +212,7 @@ Scheduled jobs:
 
 - Outbox relay (see 5.3).
 - Low-stock scan every 5 minutes (`@Scheduled(cron)`, guarded by ShedLock so only one ECS task runs it): emits `LowStock` once per threshold crossing.
+- Retention cleanup daily at 03:00 UTC, guarded by ShedLock (see 5.3).
 
 ### 4.4 notification-service (Micronaut, port 8084, schema `notifications`)
 
@@ -237,6 +238,8 @@ Responsibility: turn business events into customer and ops notifications. Uses M
 Keying by `orderId` puts one order's records in the same partition, where Kafka preserves append order. The relay also waits for every earlier unpublished event of that order before sending a later one; the key alone cannot prevent two concurrent relays from sending out of order.
 
 Consumer groups: `inventory-service`, `order-service`, `notification-service`.
+
+All topics are created with `retention.ms` = 7 days; Spring's `KafkaAdmin` (`modify-topic-configs`) and the ECS `kafka-topics` init container also correct existing topics that drifted from it.
 
 ### 5.2 Event envelope
 
@@ -281,7 +284,7 @@ Solution: the event row is written in the same transaction as the business chang
 - `SKIP LOCKED` lets several service instances work on distinct rows concurrently. A crash after the Kafka ack can still cause a retry of the same event.
 - Guarantee: at-least-once (a crash after send but before `published_at` update republishes). Consumers are idempotent, so the end result is effectively-once.
 - Producer config: `acks=all`, `enable.idempotence=true`.
-- Cleanup: published rows older than 7 days deleted by a daily job.
+- Cleanup: a daily ShedLock-guarded retention job in order-service and inventory-service deletes, in 1000-row batches, published outbox rows older than 7 days (parked rows stay for an operator), `processed_event` rows older than 14 days and, in inventory, `cancelled_order` rows older than 14 days. Topics carry an explicit 7-day `retention.ms`, so a replay never brings back an event older than the deduplication window.
 - Production alternative: Debezium CDC on the outbox table.
 
 ### 5.4 Idempotent consumers and errors

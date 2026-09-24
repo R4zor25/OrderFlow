@@ -252,6 +252,10 @@ run "bootstrap_runtime" {
     error_message = "Inventory and notification must trust the Keycloak issuer and fetch keys internally."
   }
   assert {
+    condition     = strcontains(local.kafka_topics_command, "--config retention.ms=604800000") && strcontains(local.kafka_topics_command, "kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000")
+    error_message = "Kafka topics must be created and kept at a seven-day retention."
+  }
+  assert {
     condition = (output.cluster_name == aws_ecs_cluster.main.name && output.alb_dns_name == aws_lb.main.dns_name && !output.runtime_enabled && output.image_tag == var.image_tag &&
       toset(keys(output.service_names)) == toset(["catalog-pricing-service", "order-service", "inventory-service", "notification-service", "kafka", "redis"]) &&
     output.task_definition_arns == { for name, t in merge(aws_ecs_task_definition.application, aws_ecs_task_definition.infrastructure) : name => t.arn })

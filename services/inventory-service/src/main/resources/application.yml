@@ -25,6 +25,8 @@ spring:
     default-schema: inventory
     locations: classpath:db/migration/inventory
   kafka:
+    admin:
+      modify-topic-configs: true
     consumer:
       group-id: inventory-service
       key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
