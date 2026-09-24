@@ -52,6 +52,12 @@ spring:
         delivery.timeout.ms: 10000
 
 inventory:
+  retention:
+    cron: "0 0 3 * * *"
+    outbox: 7d
+    processed-events: 14d
+    cancelled-orders: 14d
+    batch-size: 1000
   messaging:
     health:
       timeout: 2s
