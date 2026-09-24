@@ -3,12 +3,10 @@ package com.orderflow.inventory.config;
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.common.config.TopicConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
@@ -20,29 +18,23 @@ import tools.jackson.core.JacksonException;
 @EnableConfigurationProperties({InventoryOutboxRelayProperties.class, InventoryConsumerErrorProperties.class})
 public class InventoryMessagingConfiguration {
 
-    // Seven days; processed_event and cancelled_order are kept twice as long, so a replay never outlives deduplication.
-    private static final String TOPIC_RETENTION_MS = "604800000";
-
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = "inventory.messaging", name = "enabled", havingValue = "true")
     static class EnabledMessagingConfiguration {
 
         @Bean
         NewTopic orderEventsTopic() {
-            return TopicBuilder.name("orders.order-events.v1").partitions(3).replicas(1)
-                .config(TopicConfig.RETENTION_MS_CONFIG, TOPIC_RETENTION_MS).build();
+            return KafkaTopics.topic("orders.order-events.v1");
         }
 
         @Bean
         NewTopic stockEventsTopic() {
-            return TopicBuilder.name("inventory.stock-events.v1").partitions(3).replicas(1)
-                .config(TopicConfig.RETENTION_MS_CONFIG, TOPIC_RETENTION_MS).build();
+            return KafkaTopics.topic("inventory.stock-events.v1");
         }
 
         @Bean
         NewTopic orderEventsDltTopic() {
-            return TopicBuilder.name("orders.order-events.v1.DLT").partitions(3).replicas(1)
-                .config(TopicConfig.RETENTION_MS_CONFIG, TOPIC_RETENTION_MS).build();
+            return KafkaTopics.topic("orders.order-events.v1.DLT");
         }
 
         @Bean

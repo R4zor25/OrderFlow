@@ -27,11 +27,15 @@ class TopicRetentionIntegrationTest {
     private KafkaAdmin kafkaAdmin;
 
     @Test
-    void topicsAreCreatedWithExplicitSevenDayRetention() throws Exception {
+    void everyDeclaredTopicHasExplicitRetentionAndDailySegments() throws Exception {
         try (var admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
-            ConfigEntry retention = retention(admin);
-            assertThat(retention.value()).isEqualTo("604800000");
-            assertThat(retention.source()).isEqualTo(ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG);
+            for (String topic : List.of("orders.order-events.v1", "inventory.stock-events.v1",
+                "orders.order-events.v1.DLT")) {
+                var resource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+                var config = admin.describeConfigs(List.of(resource)).all().get().get(resource);
+                assertExplicit(config.get(TopicConfig.RETENTION_MS_CONFIG), "604800000");
+                assertExplicit(config.get(TopicConfig.SEGMENT_MS_CONFIG), "86400000");
+            }
         }
     }
 
@@ -46,6 +50,11 @@ class TopicRetentionIntegrationTest {
 
             assertThat(retention(admin).value()).isEqualTo("604800000");
         }
+    }
+
+    private static void assertExplicit(ConfigEntry entry, String value) {
+        assertThat(entry.value()).as(entry.name()).isEqualTo(value);
+        assertThat(entry.source()).as(entry.name()).isEqualTo(ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG);
     }
 
     private static ConfigEntry retention(AdminClient admin) throws Exception {

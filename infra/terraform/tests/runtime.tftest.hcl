@@ -252,7 +252,7 @@ run "bootstrap_runtime" {
     error_message = "Inventory and notification must trust the Keycloak issuer and fetch keys internally."
   }
   assert {
-    condition     = strcontains(local.kafka_topics_command, "--config retention.ms=604800000") && strcontains(local.kafka_topics_command, "kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000")
+    condition     = strcontains(local.kafka_topics_command, "--config retention.ms=604800000 --config segment.ms=86400000") && strcontains(local.kafka_topics_command, "kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000,segment.ms=86400000")
     error_message = "Kafka topics must be created and kept at a seven-day retention."
   }
   assert {

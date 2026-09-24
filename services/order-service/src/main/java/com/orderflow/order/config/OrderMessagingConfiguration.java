@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -23,12 +22,12 @@ public class OrderMessagingConfiguration {
 
         @Bean
         NewTopic stockEventsTopic() {
-            return TopicBuilder.name("inventory.stock-events.v1").partitions(3).replicas(1).build();
+            return KafkaTopics.topic("inventory.stock-events.v1");
         }
 
         @Bean
         NewTopic stockEventsDltTopic() {
-            return TopicBuilder.name("inventory.stock-events.v1.DLT").partitions(3).replicas(1).build();
+            return KafkaTopics.topic("inventory.stock-events.v1.DLT");
         }
 
         @Bean
