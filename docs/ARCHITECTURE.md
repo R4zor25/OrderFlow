@@ -273,7 +273,7 @@ Payloads:
 
 Evolution rule: adding optional fields is allowed within `v1`; renaming or removing a field means a new event version and a period of dual publishing.
 
-Consumers are tolerant readers: an unknown `eventType` or an `eventVersion` above the one they support is skipped with a WARN log (offset committed, no DLT), so a new event type within `v1` or a dual-published newer version never dead-letters. Only a malformed instance of a known event goes to the DLT.
+Consumers are tolerant readers: an unknown `eventType` or an `eventVersion` above the one they support is skipped with a WARN log (offset committed, no DLT), so a new event type within `v1` or a dual-published newer version never dead-letters. Only a malformed instance of a known event goes to the DLT. Skipped records are not replayable, so a producer must keep publishing the old version until every consumer supports the new one; a skipped `OrderCancelled`, for example, would never release its reservation.
 
 ### 5.3 Transactional outbox
 

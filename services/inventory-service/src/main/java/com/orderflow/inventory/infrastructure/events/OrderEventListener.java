@@ -42,8 +42,8 @@ public class OrderEventListener {
         int version = tree.path("eventVersion").asInt(0);
         if (version > 1 || !KNOWN_TYPES.contains(type)) {
             // Tolerant reader: a new type within v1 or a dual-published newer version is not an error.
-            log.warn("Skipping unsupported order event type={} version={} topic={} partition={} offset={}",
-                type, version, record.topic(), record.partition(), record.offset());
+            log.warn("Skipping unsupported order event eventId={} type={} version={} topic={} partition={} offset={}",
+                tree.path("eventId").asString(), type, version, record.topic(), record.partition(), record.offset());
             return;
         }
         switch (type) {
