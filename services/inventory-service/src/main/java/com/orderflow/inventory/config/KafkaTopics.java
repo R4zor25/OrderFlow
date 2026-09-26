@@ -11,7 +11,14 @@ final class KafkaTopics {
     private static final String RETENTION_MS = "604800000";
     private static final String SEGMENT_MS = "86400000";
 
+    // Matches spring.kafka.consumer.group-id; a dead-letter topic belongs to exactly one consumer group.
+    static final String GROUP = "inventory-service";
+
     private KafkaTopics() {
+    }
+
+    static String deadLetter(String topic) {
+        return topic + "." + GROUP + ".DLT";
     }
 
     static NewTopic topic(String name) {

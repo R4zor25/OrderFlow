@@ -29,14 +29,14 @@ public class OrderMessagingConfiguration {
 
         @Bean
         NewTopic stockEventsDltTopic() {
-            return KafkaTopics.topic("inventory.stock-events.v1.DLT");
+            return KafkaTopics.topic(KafkaTopics.deadLetter("inventory.stock-events.v1"));
         }
 
         @Bean
         DefaultErrorHandler orderConsumerErrorHandler(KafkaTemplate<String, String> kafka,
                                                        OrderConsumerErrorProperties properties) {
             var recoverer = new DeadLetterPublishingRecoverer(kafka,
-                (record, exception) -> new TopicPartition(record.topic() + ".DLT", record.partition()));
+                (record, exception) -> new TopicPartition(KafkaTopics.deadLetter(record.topic()), record.partition()));
             recoverer.setFailIfSendResultIsError(true);
             recoverer.setWaitForSendResultTimeout(properties.dltSendTimeout());
 

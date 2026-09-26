@@ -142,7 +142,7 @@ run "bootstrap_runtime" {
       jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].dependsOn[0].containerName == "kafka" &&
       jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].dependsOn[0].condition == "HEALTHY" &&
       jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].image == jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[0].image &&
-      alltrue([for topic in ["orders.order-events.v1", "orders.order-events.v1.DLT", "inventory.stock-events.v1", "inventory.stock-events.v1.DLT"] :
+      alltrue([for topic in local.kafka_topics :
       strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], topic)]) &&
       strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--if-not-exists") &&
       strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--partitions 3") &&
@@ -254,6 +254,10 @@ run "bootstrap_runtime" {
   assert {
     condition     = strcontains(local.kafka_topics_command, "--config retention.ms=604800000 --config segment.ms=86400000") && strcontains(local.kafka_topics_command, "kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000,segment.ms=86400000")
     error_message = "Kafka topics must be created and kept at a seven-day retention."
+  }
+  assert {
+    condition     = toset(local.kafka_topics) == toset(["orders.order-events.v1", "inventory.stock-events.v1", "orders.order-events.v1.inventory-service.DLT", "inventory.stock-events.v1.order-service.DLT", "orders.order-events.v1.notification-service.DLT", "inventory.stock-events.v1.notification-service.DLT"])
+    error_message = "ECS must create the business topics and one dead-letter topic per consumer group."
   }
   assert {
     condition = (output.cluster_name == aws_ecs_cluster.main.name && output.alb_dns_name == aws_lb.main.dns_name && !output.runtime_enabled && output.image_tag == var.image_tag &&

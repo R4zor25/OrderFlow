@@ -41,7 +41,8 @@ locals {
       environment    = {}
     }
   }
-  kafka_topics_command = "set -e; for topic in orders.order-events.v1 orders.order-events.v1.DLT inventory.stock-events.v1 inventory.stock-events.v1.DLT; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic $topic --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config segment.ms=86400000; /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000,segment.ms=86400000; done"
+  kafka_topics         = ["orders.order-events.v1", "inventory.stock-events.v1", "orders.order-events.v1.inventory-service.DLT", "inventory.stock-events.v1.order-service.DLT", "orders.order-events.v1.notification-service.DLT", "inventory.stock-events.v1.notification-service.DLT"]
+  kafka_topics_command = "set -e; for topic in ${join(" ", local.kafka_topics)}; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic $topic --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config segment.ms=86400000; /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type topics --entity-name $topic --add-config retention.ms=604800000,segment.ms=86400000; done"
   # Auto-creation is off, so a replaced broker needs its topics before the applications restart.
   kafka_topics_container = {
     name        = "kafka-topics"

@@ -10,8 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = 'apache/kafka:4.3.1'
-TOPICS = ('orders.order-events.v1', 'orders.order-events.v1.DLT',
-          'inventory.stock-events.v1', 'inventory.stock-events.v1.DLT')
+TOPICS = ('orders.order-events.v1', 'inventory.stock-events.v1',
+          'orders.order-events.v1.inventory-service.DLT', 'inventory.stock-events.v1.order-service.DLT',
+          'orders.order-events.v1.notification-service.DLT', 'inventory.stock-events.v1.notification-service.DLT')
 # Same single-node settings as the ECS broker, advertised on localhost like containers of one awsvpc task.
 BROKER_ENV = {
     'KAFKA_NODE_ID': '1',
@@ -35,10 +36,13 @@ def docker(*args, check=True):
 
 def topics_command():
     source = (ROOT / 'infra/terraform/ecs-infra.tf').read_text()
-    match = re.search(r'kafka_topics_command\s*=\s*"([^"]*)"', source)
-    if match is None:
-        raise AssertionError('kafka_topics_command is missing from ecs-infra.tf')
-    return match.group(1)
+    topics = re.search(r'kafka_topics\s*=\s*\[([^\]]*)\]', source)
+    match = re.search(r'kafka_topics_command\s*=\s*"(.*)"\n', source)
+    if topics is None or match is None:
+        raise AssertionError('kafka_topics or kafka_topics_command is missing from ecs-infra.tf')
+    # Terraform interpolates the topic list into the command; the test does the same.
+    names = re.findall(r'"([^"]+)"', topics.group(1))
+    return match.group(1).replace('${join(" ", local.kafka_topics)}', ' '.join(names))
 
 
 @unittest.skipUnless(shutil.which('docker'), 'Docker is required')

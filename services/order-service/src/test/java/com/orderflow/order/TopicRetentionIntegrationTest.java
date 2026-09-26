@@ -26,7 +26,7 @@ class TopicRetentionIntegrationTest {
     void everyDeclaredTopicHasExplicitRetentionAndDailySegments() throws Exception {
         try (var admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
             for (String topic : List.of("orders.order-events.v1", "inventory.stock-events.v1",
-                "inventory.stock-events.v1.DLT")) {
+                "inventory.stock-events.v1.order-service.DLT")) {
                 var resource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
                 var config = admin.describeConfigs(List.of(resource)).all().get().get(resource);
                 assertExplicit(config.get(TopicConfig.RETENTION_MS_CONFIG), "604800000");

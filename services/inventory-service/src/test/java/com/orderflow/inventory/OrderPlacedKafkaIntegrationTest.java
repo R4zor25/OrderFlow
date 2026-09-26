@@ -150,10 +150,12 @@ class OrderPlacedKafkaIntegrationTest {
         producer.send("orders.order-events.v1", key, json.writeValueAsString(placed))
             .get(10, TimeUnit.SECONDS);
 
-        var deadLetter = receiveEvent("orders.order-events.v1.DLT", key);
+        var deadLetter = receiveEvent("orders.order-events.v1.inventory-service.DLT", key);
         assertThat(deadLetter.value()).isEqualTo(malformed);
         assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-topic").value(),
             StandardCharsets.UTF_8)).isEqualTo("orders.order-events.v1");
+        assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-consumer-group").value(),
+            StandardCharsets.UTF_8)).isEqualTo("inventory-service");
 
         org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(jdbc.queryForObject("""
@@ -229,7 +231,7 @@ class OrderPlacedKafkaIntegrationTest {
         producer.send("orders.order-events.v1", orderId.toString(), value)
             .get(10, TimeUnit.SECONDS);
 
-        var deadLetter = receiveEvent("orders.order-events.v1.DLT", orderId.toString());
+        var deadLetter = receiveEvent("orders.order-events.v1.inventory-service.DLT", orderId.toString());
         assertThat(deadLetter.value()).isEqualTo(value);
         verify(processor, never()).process(any());
         assertThat(jdbc.queryForObject("""

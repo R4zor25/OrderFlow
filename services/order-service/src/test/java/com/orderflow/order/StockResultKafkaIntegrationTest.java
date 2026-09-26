@@ -2,10 +2,12 @@ package com.orderflow.order;
 
 import com.orderflow.order.application.OrderAccess;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import io.micrometer.tracing.Tracer;
@@ -18,6 +20,7 @@ import com.orderflow.order.infrastructure.events.EventEnvelope;
 import com.orderflow.order.infrastructure.events.StockReservationFailedPayload;
 import com.orderflow.order.infrastructure.events.StockReservedPayload;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
@@ -146,7 +149,11 @@ class StockResultKafkaIntegrationTest {
         send(orderId.toString(), poison);
         send(orderId.toString(), json.writeValueAsString(valid));
 
-        assertThat(readDlt(poison, Duration.ofSeconds(15))).isTrue();
+        var deadLetter = readDlt(poison, Duration.ofSeconds(15));
+        assertThat(deadLetter).isPresent();
+        assertThat(new String(deadLetter.orElseThrow().headers()
+            .lastHeader("kafka_dlt-original-consumer-group").value(), StandardCharsets.UTF_8))
+            .isEqualTo("order-service");
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(orders.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(processedCount(validEventId)).isEqualTo(1);
@@ -194,23 +201,23 @@ class StockResultKafkaIntegrationTest {
         kafka.send(TOPIC, key, value).get();
     }
 
-    private boolean readDlt(String payload, Duration timeout) {
+    private Optional<ConsumerRecord<String, String>> readDlt(String payload, Duration timeout) {
         try (var consumer = new KafkaConsumer<String, String>(Map.of(
             ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker.getBootstrapServers(),
             ConsumerConfig.GROUP_ID_CONFIG, "order-dlt-test-" + UUID.randomUUID(),
             ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
             ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class))) {
-            consumer.subscribe(List.of(TOPIC + ".DLT"));
+            consumer.subscribe(List.of(TOPIC + ".order-service.DLT"));
             Instant deadline = Instant.now().plus(timeout);
             while (Instant.now().isBefore(deadline)) {
                 for (var record : consumer.poll(Duration.ofMillis(500))) {
                     if (payload.equals(record.value())) {
-                        return true;
+                        return Optional.of(record);
                     }
                 }
             }
-            return false;
+            return Optional.empty();
         }
     }
 
