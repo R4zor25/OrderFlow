@@ -8,12 +8,14 @@ import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class OrderEventListenerTest {
 
+    private final OrderPlacedProcessor placed = mock(OrderPlacedProcessor.class);
+    private final OrderCancelledProcessor cancelled = mock(OrderCancelledProcessor.class);
     private final OrderEventListener listener = new OrderEventListener(
-        JsonMapper.builder().findAndAddModules().build(), mock(OrderPlacedProcessor.class),
-        mock(OrderCancelledProcessor.class));
+        JsonMapper.builder().findAndAddModules().build(), placed, cancelled);
 
     @Test
     void rejectsMessageWithoutEventType() {
@@ -25,12 +27,23 @@ class OrderEventListenerTest {
     }
 
     @Test
-    void rejectsUnknownEventType() {
+    void skipsUnknownEventType() {
         var record = new ConsumerRecord<>("orders.order-events.v1", 0, 0L,
-            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "{\"eventType\":\"Unexpected\"}");
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "{\"eventType\":\"OrderShipped\",\"eventVersion\":1}");
 
-        assertThatThrownBy(() -> listener.onMessage(record))
-            .isInstanceOf(IllegalArgumentException.class);
+        listener.onMessage(record);
+
+        verifyNoInteractions(placed, cancelled);
+    }
+
+    @Test
+    void skipsNewerOrderEventVersion() {
+        var record = new ConsumerRecord<>("orders.order-events.v1", 0, 0L,
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "{\"eventType\":\"OrderPlaced\",\"eventVersion\":2}");
+
+        listener.onMessage(record);
+
+        verifyNoInteractions(placed, cancelled);
     }
 
     @Test

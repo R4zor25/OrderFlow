@@ -19,11 +19,7 @@ public class OrderCancelledProcessor {
         Objects.requireNonNull(event, "event");
         var payload = event.payload();
         if (!"OrderCancelled".equals(event.eventType()) || event.eventVersion() != 1
-            || payload.orderId() == null || !event.aggregateId().equals(payload.orderId().toString())
-            || payload.customerId() == null || payload.customerEmail() == null
-            || payload.customerEmail().isBlank()
-            || !("PENDING".equals(payload.previousStatus())
-                || "CONFIRMED".equals(payload.previousStatus()))) {
+            || payload.orderId() == null || !event.aggregateId().equals(payload.orderId().toString())) {
             throw new IllegalArgumentException("Invalid OrderCancelled event");
         }
         cancellation.release(event.eventId(), payload.orderId());

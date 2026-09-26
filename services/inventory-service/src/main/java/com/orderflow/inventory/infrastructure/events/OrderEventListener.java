@@ -1,5 +1,7 @@
 package com.orderflow.inventory.infrastructure.events;
 
+import java.util.Set;
+
 import com.orderflow.inventory.application.OrderPlacedProcessor;
 import com.orderflow.inventory.application.OrderCancelledProcessor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -16,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 public class OrderEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(OrderEventListener.class);
+    private static final Set<String> KNOWN_TYPES =
+        Set.of("OrderPlaced", "OrderCancelled", "OrderConfirmed", "OrderRejected");
 
     private final ObjectMapper json;
     private final OrderPlacedProcessor placed;
@@ -30,9 +34,17 @@ public class OrderEventListener {
 
     @KafkaListener(topics = "orders.order-events.v1")
     public void onMessage(ConsumerRecord<String, String> record) {
-        String type = json.readTree(record.value()).path("eventType").asString();
+        var tree = json.readTree(record.value());
+        String type = tree.path("eventType").asString();
         if (type == null || type.isBlank()) {
             throw new IllegalArgumentException("Event type is required");
+        }
+        int version = tree.path("eventVersion").asInt(0);
+        if (version > 1 || !KNOWN_TYPES.contains(type)) {
+            // Tolerant reader: a new type within v1 or a dual-published newer version is not an error.
+            log.warn("Skipping unsupported order event type={} version={} topic={} partition={} offset={}",
+                type, version, record.topic(), record.partition(), record.offset());
+            return;
         }
         switch (type) {
             case "OrderPlaced" -> {
@@ -49,8 +61,7 @@ public class OrderEventListener {
                 log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), event.aggregateId());
                 cancelled.process(event);
             }
-            case "OrderConfirmed", "OrderRejected" -> { }
-            default -> throw new IllegalArgumentException("Unsupported order event type: " + type);
+            default -> { }
         }
     }
 
