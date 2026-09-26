@@ -52,12 +52,22 @@ class NotificationEventDecoderTest {
     }
 
     @Test
-    void rejectsWrongKeyAndUnsupportedVersion() throws Exception {
+    void rejectsWrongKey() throws Exception {
         var json = contract("low-stock");
         assertThatThrownBy(() -> decoder.decode("inventory.stock-events.v1", "OTHER", json))
                 .isInstanceOf(InvalidNotificationEventException.class);
-        assertThatThrownBy(() -> decoder.decode("inventory.stock-events.v1", "CHAIR-001",
-                json.replace("\"eventVersion\": 1", "\"eventVersion\": 2")))
+    }
+
+    @Test
+    void skipsNewerVersionOfKnownType() throws Exception {
+        var json = contract("low-stock").replace("\"eventVersion\": 1", "\"eventVersion\": 2");
+        assertThat(decoder.decode("inventory.stock-events.v1", "CHAIR-001", json)).isEmpty();
+    }
+
+    @Test
+    void rejectsMissingVersion() throws Exception {
+        var json = contract("low-stock").replace("\"eventVersion\": 1", "\"eventVersion\": 0");
+        assertThatThrownBy(() -> decoder.decode("inventory.stock-events.v1", "CHAIR-001", json))
                 .isInstanceOf(InvalidNotificationEventException.class);
     }
 

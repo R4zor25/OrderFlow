@@ -84,7 +84,7 @@ public final class NotificationEventListener {
         try {
             var decoded = decoder.decode(record.topic(), record.key(), record.value());
             if (decoded.isEmpty()) {
-                log.info("Skipping unknown event type at topic={}, partition={}, offset={}",
+                log.warn("Skipping unsupported event type or version at topic={}, partition={}, offset={}",
                         record.topic(), record.partition(), record.offset());
                 return;
             }

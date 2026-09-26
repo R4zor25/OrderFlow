@@ -38,11 +38,11 @@ public final class NotificationEventDecoder {
                 case "LowStock" -> NotificationEvent.LowStock.class;
                 default -> null;
             };
-            if (payloadType == null) {
+            if (payloadType == null || envelope.eventVersion() > 1) {
                 return Optional.empty();
             }
             String expectedTopic = payloadType == NotificationEvent.LowStock.class ? STOCK_TOPIC : ORDER_TOPIC;
-            if (!expectedTopic.equals(topic) || envelope.eventId() == null || envelope.eventVersion() != 1
+            if (!expectedTopic.equals(topic) || envelope.eventId() == null || envelope.eventVersion() < 1
                     || envelope.occurredAt() == null || blank(envelope.aggregateId())
                     || !envelope.aggregateId().equals(key) || envelope.payload() == null) {
                 throw new InvalidNotificationEventException("Invalid envelope for " + envelope.eventType());
