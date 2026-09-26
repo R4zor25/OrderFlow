@@ -1,5 +1,7 @@
 package com.orderflow.order.config;
 
+import com.orderflow.order.domain.InvalidOrderStateException;
+import com.orderflow.order.domain.OrderNotFoundException;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -40,7 +42,9 @@ public class OrderMessagingConfiguration {
 
             var handler = new DefaultErrorHandler(recoverer,
                 new FixedBackOff(properties.retryInterval().toMillis(), properties.retryCount()));
-            handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
+            // Unknown orders and impossible transitions give the same result on every retry.
+            handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class,
+                OrderNotFoundException.class, InvalidOrderStateException.class);
             return handler;
         }
     }

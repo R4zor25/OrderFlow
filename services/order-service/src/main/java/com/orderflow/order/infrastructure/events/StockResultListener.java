@@ -1,9 +1,12 @@
 package com.orderflow.order.infrastructure.events;
 
+import java.util.Set;
 import java.util.UUID;
 
 import com.orderflow.order.application.StockResultService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -14,6 +17,9 @@ import tools.jackson.databind.ObjectMapper;
 @ConditionalOnProperty(prefix = "order.messaging", name = "enabled", havingValue = "true")
 public class StockResultListener {
 
+    private static final Logger log = LoggerFactory.getLogger(StockResultListener.class);
+    private static final Set<String> KNOWN_TYPES =
+        Set.of("StockReserved", "StockReservationFailed", "StockReleased", "LowStock");
     private static final int MAX_REASON_LENGTH = 500;
 
     private final ObjectMapper json;
@@ -26,12 +32,19 @@ public class StockResultListener {
 
     @KafkaListener(topics = "inventory.stock-events.v1")
     public void onMessage(ConsumerRecord<String, String> record) {
-        String type = json.readTree(record.value()).path("eventType").asString();
+        var tree = json.readTree(record.value());
+        String type = tree.path("eventType").asString();
+        int version = tree.path("eventVersion").asInt(0);
+        if (version > 1 || !KNOWN_TYPES.contains(type)) {
+            // Tolerant reader: a new type within v1 or a dual-published newer version is not an error.
+            log.warn("Skipping unsupported stock event type={} version={} topic={} partition={} offset={}",
+                type, version, record.topic(), record.partition(), record.offset());
+            return;
+        }
         switch (type) {
             case "StockReserved" -> reserved(record);
             case "StockReservationFailed" -> failed(record);
-            case "StockReleased", "LowStock" -> { }
-            default -> throw new IllegalArgumentException("Unsupported stock event type: " + type);
+            default -> { }
         }
     }
 

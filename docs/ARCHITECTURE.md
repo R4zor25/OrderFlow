@@ -273,6 +273,8 @@ Payloads:
 
 Evolution rule: adding optional fields is allowed within `v1`; renaming or removing a field means a new event version and a period of dual publishing.
 
+Consumers are tolerant readers: an unknown `eventType` or an `eventVersion` above the one they support is skipped with a WARN log (offset committed, no DLT), so a new event type within `v1` or a dual-published newer version never dead-letters. Only a malformed instance of a known event goes to the DLT.
+
 ### 5.3 Transactional outbox
 
 Problem: "save to DB, then send to Kafka" loses events if the process dies between the two steps, and "send, then save" publishes events for rolled-back changes.
@@ -290,7 +292,7 @@ Solution: the event row is written in the same transaction as the business chang
 ### 5.4 Idempotent consumers and errors
 
 - Each listener runs in a DB transaction: insert into `processed_event(event_id)`; if it already exists, skip; otherwise apply the change and write any resulting outbox event. Offset is committed after the listener returns.
-- Spring Kafka `DefaultErrorHandler` with `FixedBackOff(1000 ms, 3)` and `DeadLetterPublishingRecoverer`. Deserialization and validation errors are non-retryable and go straight to the DLT.
+- Spring Kafka `DefaultErrorHandler` with `FixedBackOff(1000 ms, 3)` and `DeadLetterPublishingRecoverer`. Deserialization and validation errors are non-retryable and go straight to the DLT. In order-service, an unknown order (`OrderNotFoundException`) or an impossible state transition (`InvalidOrderStateException`) gives the same result on every attempt, so it is non-retryable too.
 - inventory-service retries other failures with an unbounded exponential back-off (1 s, doubling, at most 30 s between attempts) instead of dead-lettering them, so a database outage pauses processing rather than losing an `OrderPlaced` or `OrderCancelled`. The back-off sleeps the consumer thread, so inventory runs one listener consumer per `orders.order-events.v1` partition (`concurrency: 3`); a failing record then holds only its own partition on that instance. The cost: an unexpected bug blocks that partition until fixed, and its orders are eventually cancelled by the order timeout; it shows as repeated error logs and consumer lag. Identifiable but invalid orders are not errors: inventory answers them with `StockReservationFailed`.
 - Micronaut: `@KafkaListener` with `RETRY_EXPONENTIALLY_ON_ERROR` (6 retries from 1 s, about a minute). After the last retry the record goes to the DLT and its offset is committed, so the partition keeps moving. Invalid events, including recipients over 320 characters, go to the DLT without retries. If the DLT publish itself fails, the record is skipped with an ERROR log as its only trace.
 
