@@ -42,7 +42,9 @@ public final class NotificationListenerExceptionHandler implements KafkaListener
             return;
         }
         try {
-            deadLetterPublisher.publish(record.topic() + ".DLT", key, json);
+            Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+            deadLetterPublisher.publish(DeadLetterHeaders.topic(record.topic()), key, json,
+                    DeadLetterHeaders.of(record.topic(), record.partition(), record.offset(), cause));
         } catch (RuntimeException publishFailure) {
             // The framework commits the record after this handler returns, so the log is its only trace.
             log.error("Notification Kafka record skipped without a DLT copy at topic={}, partition={}, offset={}, "

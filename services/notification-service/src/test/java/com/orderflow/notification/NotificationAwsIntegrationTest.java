@@ -36,9 +36,7 @@ class NotificationAwsIntegrationTest {
             try (var admin = AdminClient.create(Map.of("bootstrap.servers", kafka.getBootstrapServers()))) {
                 admin.createTopics(List.of(
                         new NewTopic(NotificationEventDecoder.ORDER_TOPIC, 3, (short) 1),
-                        new NewTopic(NotificationEventDecoder.STOCK_TOPIC, 3, (short) 1),
-                        new NewTopic(NotificationEventDecoder.ORDER_TOPIC + ".DLT", 3, (short) 1),
-                        new NewTopic(NotificationEventDecoder.STOCK_TOPIC + ".DLT", 3, (short) 1))).all().get();
+                        new NewTopic(NotificationEventDecoder.STOCK_TOPIC, 3, (short) 1))).all().get();
             }
             var properties = Map.<String, Object>of(
                     "micronaut.server.port", -1,

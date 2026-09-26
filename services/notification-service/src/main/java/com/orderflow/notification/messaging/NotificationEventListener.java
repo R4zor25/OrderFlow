@@ -91,7 +91,8 @@ public final class NotificationEventListener {
             NotificationEvent event = decoded.orElseThrow();
             processor.process(event);
         } catch (InvalidNotificationEventException invalid) {
-            deadLetterPublisher.publish(record.topic() + ".DLT", record.key(), record.value());
+            deadLetterPublisher.publish(DeadLetterHeaders.topic(record.topic()), record.key(), record.value(),
+                    DeadLetterHeaders.of(record.topic(), record.partition(), record.offset(), invalid));
             log.warn("Invalid notification event moved to DLT at topic={}, partition={}, offset={}",
                     record.topic(), record.partition(), record.offset());
         }

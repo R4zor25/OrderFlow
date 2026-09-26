@@ -7,12 +7,17 @@ import io.micronaut.configuration.kafka.annotation.ErrorStrategyValue;
 import io.micronaut.configuration.kafka.annotation.KafkaListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.CommitFailedException;
+import org.apache.kafka.common.header.Headers;
 import org.junit.jupiter.api.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -37,7 +42,13 @@ class NotificationEventListenerTest {
         listener.onEvent(new ConsumerRecord<>(NotificationEventDecoder.STOCK_TOPIC, 0, 0,
                 "CHAIR-001", "{broken-json"));
         assertThat(publisher.sent).containsExactly(new Published(
-                NotificationEventDecoder.STOCK_TOPIC + ".DLT", "CHAIR-001", "{broken-json"));
+                NotificationEventDecoder.STOCK_TOPIC + ".notification-service.DLT", "CHAIR-001", "{broken-json",
+                Map.of("kafka_dlt-original-topic", NotificationEventDecoder.STOCK_TOPIC,
+                        "kafka_dlt-original-partition", "0",
+                        "kafka_dlt-original-offset", "0",
+                        "kafka_dlt-original-consumer-group", "notification-service",
+                        "kafka_dlt-exception-fqcn", InvalidNotificationEventException.class.getName(),
+                        "kafka_dlt-exception-message", "Cannot decode notification event")));
     }
 
     @Test
@@ -48,7 +59,23 @@ class NotificationEventListenerTest {
                 listener, null, failedRecord);
         new NotificationListenerExceptionHandler(publisher).handle(failure);
         assertThat(publisher.sent).containsExactly(new Published(
-                NotificationEventDecoder.ORDER_TOPIC + ".DLT", "order-123", "original-json"));
+                NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT", "order-123", "original-json",
+                Map.of("kafka_dlt-original-topic", NotificationEventDecoder.ORDER_TOPIC,
+                        "kafka_dlt-original-partition", "1",
+                        "kafka_dlt-original-offset", "12",
+                        "kafka_dlt-original-consumer-group", "notification-service",
+                        "kafka_dlt-exception-fqcn", IllegalStateException.class.getName(),
+                        "kafka_dlt-exception-message", "temporary")));
+    }
+
+    @Test
+    void truncatesLongExceptionMessageTo1000Characters() {
+        var record = new ConsumerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, 12,
+                "order-123", "original-json");
+        var failure = new KafkaListenerException("processing failed", new IllegalStateException("x".repeat(1500)),
+                listener, null, record);
+        new NotificationListenerExceptionHandler(publisher).handle(failure);
+        assertThat(publisher.sent.getFirst().headers().get("kafka_dlt-exception-message")).hasSize(1000);
     }
 
     @Test
@@ -75,7 +102,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("processing failed", new IllegalStateException("temporary"),
                 listener, null, record);
-        NotificationDeadLetterPublisher failing = (topic, key, json) -> {
+        NotificationDeadLetterPublisher failing = (topic, key, json, headers) -> {
             throw new IllegalStateException("broker unavailable");
         };
 
@@ -83,15 +110,23 @@ class NotificationEventListenerTest {
                 .doesNotThrowAnyException();
     }
 
-    private record Published(String topic, String key, String json) {
+    private record Published(String topic, String key, String json, Map<String, String> headers) {
     }
 
     private static final class RecordingPublisher implements NotificationDeadLetterPublisher {
         private final List<Published> sent = new ArrayList<>();
 
         @Override
-        public void publish(String topic, String key, String json) {
-            sent.add(new Published(topic, key, json));
+        public void publish(String topic, String key, String json, Headers headers) {
+            var decoded = new HashMap<String, String>();
+            for (var header : headers) {
+                decoded.put(header.key(), switch (header.key()) {
+                    case "kafka_dlt-original-partition" -> String.valueOf(ByteBuffer.wrap(header.value()).getInt());
+                    case "kafka_dlt-original-offset" -> String.valueOf(ByteBuffer.wrap(header.value()).getLong());
+                    default -> new String(header.value(), StandardCharsets.UTF_8);
+                });
+            }
+            sent.add(new Published(topic, key, json, decoded));
         }
     }
 }

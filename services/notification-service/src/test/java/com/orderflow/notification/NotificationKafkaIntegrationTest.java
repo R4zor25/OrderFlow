@@ -25,6 +25,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -57,9 +58,7 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 kafka.getBootstrapServers()))) {
             admin.createTopics(List.of(
                     new NewTopic(NotificationEventDecoder.ORDER_TOPIC, 3, (short) 1),
-                    new NewTopic(NotificationEventDecoder.STOCK_TOPIC, 3, (short) 1),
-                    new NewTopic(NotificationEventDecoder.ORDER_TOPIC + ".DLT", 3, (short) 1),
-                    new NewTopic(NotificationEventDecoder.STOCK_TOPIC + ".DLT", 3, (short) 1)
+                    new NewTopic(NotificationEventDecoder.STOCK_TOPIC, 3, (short) 1)
             )).all().get();
         } catch (Exception exception) {
             throw new IllegalStateException("Cannot create Kafka test topics", exception);
@@ -122,7 +121,7 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))) {
-            var topic = NotificationEventDecoder.ORDER_TOPIC + ".DLT";
+            var topic = NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT";
             consumer.subscribe(List.of(topic));
             await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
                 var records = consumer.poll(Duration.ofMillis(250));
@@ -130,6 +129,10 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 var deadLetter = records.iterator().next();
                 assertThat(deadLetter.key()).isEqualTo(orderKey);
                 assertThat(deadLetter.value()).isEqualTo("{broken-json");
+                assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-consumer-group").value(),
+                        StandardCharsets.UTF_8)).isEqualTo("notification-service");
+                assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-topic").value(),
+                        StandardCharsets.UTF_8)).isEqualTo(NotificationEventDecoder.ORDER_TOPIC);
             });
         }
     }
