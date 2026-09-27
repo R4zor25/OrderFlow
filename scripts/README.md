@@ -293,6 +293,9 @@ Behavior tests fake external CLI responses without cloud access; workflow contra
 
 `scripts/dlt-replay.sh <topic>.<group>.DLT <partition> <offset>` reads one record from a dead-letter topic and
 republishes its key and value to the source topic. Every consumer group receives it again; deduplication makes
-that safe for events up to 14 days old. Inspect the record and its `kafka_dlt-*` headers in Kafka UI first, fix
-the cause, then replay. Headers (including the trace context) are not replayed. Set `KAFKA_EXEC` to run the
-Kafka tools through another command than `docker compose -f infra/docker-compose.yaml exec -T kafka`.
+that safe within 14 days of the original publish (check the record timestamp). Inspect the record and its
+`kafka_dlt-*` headers in Kafka UI first, fix the cause, then replay. Only one keyed, single-line record is
+replayed; headers (including the trace context) are not. `<topic>.DLT` topics from earlier versions stay
+readable in Kafka UI but are no longer written and cannot be replayed with this script. Set `KAFKA_EXEC` to run
+the Kafka tools through another command than `docker compose -f infra/docker-compose.yaml exec -T kafka`; it is
+split on whitespace, so it cannot contain quoted arguments.

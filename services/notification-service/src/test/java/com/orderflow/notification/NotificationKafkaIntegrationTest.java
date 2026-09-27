@@ -1,5 +1,6 @@
 package com.orderflow.notification;
 
+import com.orderflow.notification.messaging.InvalidNotificationEventException;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
@@ -11,6 +12,10 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
+import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
@@ -25,6 +30,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,7 +47,9 @@ import static org.awaitility.Awaitility.await;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NotificationKafkaIntegrationTest implements TestPropertyProvider {
 
-    private static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.3.1");
+    // Auto-create off, as in Compose and ECS, so the dead-letter topics must come from the service itself.
+    private static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.3.1")
+            .withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
     private static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17.11-bookworm");
 
     private static final GenericContainer<?> mailpit = new GenericContainer<>("axllent/mailpit:v1.31.2")
@@ -93,6 +101,7 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
         var unknown = confirmed.replace("OrderConfirmed", "OrderShipped");
         var lowStock = Files.readString(Path.of("../../contracts/events/low-stock.json"));
 
+        RecordMetadata broken;
         try (var producer = new KafkaProducer<String, String>(Map.of(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
@@ -101,7 +110,8 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, confirmed)).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, confirmed)).get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, unknown)).get();
-            producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, "{broken-json")).get();
+            broken = producer.send(new ProducerRecord<>(NotificationEventDecoder.ORDER_TOPIC, orderKey, "{broken-json"))
+                    .get();
             producer.send(new ProducerRecord<>(NotificationEventDecoder.STOCK_TOPIC, "CHAIR-001", lowStock)).get();
         }
 
@@ -129,12 +139,41 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 var deadLetter = records.iterator().next();
                 assertThat(deadLetter.key()).isEqualTo(orderKey);
                 assertThat(deadLetter.value()).isEqualTo("{broken-json");
-                assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-consumer-group").value(),
-                        StandardCharsets.UTF_8)).isEqualTo("notification-service");
-                assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-topic").value(),
-                        StandardCharsets.UTF_8)).isEqualTo(NotificationEventDecoder.ORDER_TOPIC);
+                var headers = deadLetter.headers();
+                assertThat(text(headers, "kafka_dlt-original-topic")).isEqualTo(NotificationEventDecoder.ORDER_TOPIC);
+                assertThat(ByteBuffer.wrap(headers.lastHeader("kafka_dlt-original-partition").value()).getInt())
+                        .isEqualTo(broken.partition());
+                assertThat(ByteBuffer.wrap(headers.lastHeader("kafka_dlt-original-offset").value()).getLong())
+                        .isEqualTo(broken.offset());
+                assertThat(text(headers, "kafka_dlt-original-consumer-group")).isEqualTo("notification-service");
+                assertThat(text(headers, "kafka_dlt-exception-fqcn"))
+                        .isEqualTo(InvalidNotificationEventException.class.getName());
+                assertThat(text(headers, "kafka_dlt-exception-message")).isEqualTo("Cannot decode notification event");
             });
         }
+    }
+
+    @Test
+    void createsBothDeadLetterTopicsOnABrokerWithoutAutoCreate() throws Exception {
+        var topics = List.of(NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT",
+                NotificationEventDecoder.STOCK_TOPIC + ".notification-service.DLT");
+        try (var admin = AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+                kafka.getBootstrapServers()))) {
+            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                var described = admin.describeTopics(topics).allTopicNames().get();
+                assertThat(described.values()).allSatisfy(topic -> assertThat(topic.partitions()).hasSize(3));
+                for (String name : topics) {
+                    var resource = new ConfigResource(ConfigResource.Type.TOPIC, name);
+                    var config = admin.describeConfigs(List.of(resource)).all().get().get(resource);
+                    assertThat(config.get(TopicConfig.RETENTION_MS_CONFIG).value()).isEqualTo("604800000");
+                    assertThat(config.get(TopicConfig.SEGMENT_MS_CONFIG).value()).isEqualTo("86400000");
+                }
+            });
+        }
+    }
+
+    private static String text(Headers headers, String name) {
+        return new String(headers.lastHeader(name).value(), StandardCharsets.UTF_8);
     }
 
     private List<?> mailpitMessages() throws Exception {
