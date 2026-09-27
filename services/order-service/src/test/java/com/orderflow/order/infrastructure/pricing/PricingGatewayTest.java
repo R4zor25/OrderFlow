@@ -63,8 +63,10 @@ class PricingGatewayTest {
         var resilience = new PricingResilienceConfiguration();
         var resilienceProperties = new PricingResilienceProperties(
             2, Duration.ofMillis(10), 2, 0.2, 10, 10, 50, Duration.ofSeconds(10), 2);
-        circuitBreaker = resilience.pricingCircuitBreaker(resilienceProperties);
-        gateway = new PricingGateway(client, resilience.pricingRetry(resilienceProperties), circuitBreaker);
+        circuitBreaker = resilience.pricingCircuitBreaker(
+            resilience.pricingCircuitBreakerRegistry(resilienceProperties));
+        gateway = new PricingGateway(client,
+            resilience.pricingRetry(resilience.pricingRetryRegistry(resilienceProperties)), circuitBreaker);
     }
 
     @AfterEach

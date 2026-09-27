@@ -4,6 +4,8 @@ import java.time.Duration;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
+import io.micrometer.core.instrument.binder.MeterBinder;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -33,6 +35,18 @@ class PricingResilienceConfigurationTest {
             assertThat(context.getBean(Retry.class).getRetryConfig().getMaxAttempts()).isEqualTo(2);
             assertThat(context.getBean(CircuitBreaker.class).getCircuitBreakerConfig()
                 .getSlidingWindowSize()).isEqualTo(10);
+        });
+    }
+
+    @Test
+    void publishesPricingBreakerAndRetryMetrics() {
+        contextRunner.run(context -> {
+            var registry = new SimpleMeterRegistry();
+            context.getBeansOfType(MeterBinder.class).values().forEach(binder -> binder.bindTo(registry));
+
+            assertThat(registry.find("resilience4j.circuitbreaker.state")
+                .tags("name", "pricing", "state", "closed").gauge().value()).isEqualTo(1.0);
+            assertThat(registry.find("resilience4j.retry.calls").tag("name", "pricing").meters()).isNotEmpty();
         });
     }
 }

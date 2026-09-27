@@ -2,6 +2,7 @@ package com.orderflow.order.config;
 
 import com.orderflow.order.domain.InvalidOrderStateException;
 import com.orderflow.order.domain.OrderNotFoundException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -9,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
@@ -34,13 +36,19 @@ public class OrderMessagingConfiguration {
 
         @Bean
         DefaultErrorHandler orderConsumerErrorHandler(KafkaTemplate<String, String> kafka,
-                                                       OrderConsumerErrorProperties properties) {
+                                                       OrderConsumerErrorProperties properties,
+                                                       MeterRegistry registry) {
             var recoverer = new DeadLetterPublishingRecoverer(kafka,
                 (record, exception) -> new TopicPartition(KafkaTopics.deadLetter(record.topic()), record.partition()));
             recoverer.setFailIfSendResultIsError(true);
             recoverer.setWaitForSendResultTimeout(properties.dltSendTimeout());
+            // Counted after a confirmed send: a failed publish throws before the increment.
+            ConsumerRecordRecoverer counted = (record, exception) -> {
+                recoverer.accept(record, exception);
+                registry.counter("messaging.dead.letters", "topic", KafkaTopics.deadLetter(record.topic())).increment();
+            };
 
-            var handler = new DefaultErrorHandler(recoverer,
+            var handler = new DefaultErrorHandler(counted,
                 new FixedBackOff(properties.retryInterval().toMillis(), properties.retryCount()));
             // Unknown orders and impossible transitions give the same result on every retry.
             handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class,

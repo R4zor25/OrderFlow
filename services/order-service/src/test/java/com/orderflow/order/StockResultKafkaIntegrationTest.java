@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Tracer;
 import com.orderflow.order.application.CancelOrderService;
 import com.orderflow.order.domain.Order;
@@ -69,6 +70,9 @@ class StockResultKafkaIntegrationTest {
 
     @Autowired
     private TransactionTemplate transactions;
+
+    @Autowired
+    private MeterRegistry registry;
 
     @Test
     void consumesStockReservedAndWritesConfirmation() throws Exception {
@@ -139,6 +143,7 @@ class StockResultKafkaIntegrationTest {
 
     @Test
     void sendsMalformedRecordToDltAndContinuesWithLaterRecord() throws Exception {
+        double deadLettersBefore = deadLetters();
         UUID orderId = createOrder();
         String poison = "{malformed-" + UUID.randomUUID();
         UUID validEventId = UUID.randomUUID();
@@ -154,6 +159,8 @@ class StockResultKafkaIntegrationTest {
         assertThat(new String(deadLetter.orElseThrow().headers()
             .lastHeader("kafka_dlt-original-consumer-group").value(), StandardCharsets.UTF_8))
             .isEqualTo("order-service");
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+            assertThat(deadLetters()).isEqualTo(deadLettersBefore + 1));
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(orders.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.CONFIRMED);
             assertThat(processedCount(validEventId)).isEqualTo(1);
@@ -195,6 +202,12 @@ class StockResultKafkaIntegrationTest {
             assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
             assertThat(order.getRejectionReason()).isEqualTo("Invalid order");
         });
+    }
+
+    private double deadLetters() {
+        var counter = registry.find("messaging.dead.letters")
+            .tag("topic", TOPIC + ".order-service.DLT").counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     private void send(String key, String value) throws Exception {
