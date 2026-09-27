@@ -18,6 +18,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import com.orderflow.inventory.infrastructure.events.EventEnvelope;
 import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
 import org.junit.jupiter.api.Test;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -58,6 +59,9 @@ class OrderPlacedKafkaIntegrationTest {
 
     @Autowired
     private KafkaContainer kafka;
+
+    @Autowired
+    private MeterRegistry registry;
 
     @Autowired
     private ObjectMapper json;
@@ -137,6 +141,7 @@ class OrderPlacedKafkaIntegrationTest {
 
     @Test
     void routesMalformedJsonToDltAndContinuesWithNextOrder() throws Exception {
+        double deadLettersBefore = deadLetters();
         UUID orderId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         String key = orderId.toString();
@@ -156,6 +161,8 @@ class OrderPlacedKafkaIntegrationTest {
             StandardCharsets.UTF_8)).isEqualTo("orders.order-events.v1");
         assertThat(new String(deadLetter.headers().lastHeader("kafka_dlt-original-consumer-group").value(),
             StandardCharsets.UTF_8)).isEqualTo("inventory-service");
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+            assertThat(deadLetters()).isEqualTo(deadLettersBefore + 1));
 
         org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(jdbc.queryForObject("""
@@ -249,6 +256,12 @@ class OrderPlacedKafkaIntegrationTest {
         assertThat(containers).singleElement()
             .isInstanceOfSatisfying(ConcurrentMessageListenerContainer.class,
                 container -> assertThat(container.getConcurrency()).isEqualTo(3));
+    }
+
+    private double deadLetters() {
+        var counter = registry.find("messaging.dead.letters")
+            .tag("topic", "orders.order-events.v1.inventory-service.DLT").counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     private ConsumerRecord<String, String> receiveStockEvent(UUID orderId) {
