@@ -288,3 +288,11 @@ python3 -m unittest discover -s scripts/tests_deploy -v
 ```
 
 Behavior tests fake external CLI responses without cloud access; workflow contract tests use Ruby's standard-library YAML parser. They do not establish live OIDC/IAM success.
+
+## Replaying a dead-lettered record
+
+`scripts/dlt-replay.sh <topic>.<group>.DLT <partition> <offset>` reads one record from a dead-letter topic and
+republishes its key and value to the source topic. Every consumer group receives it again; deduplication makes
+that safe for events up to 14 days old. Inspect the record and its `kafka_dlt-*` headers in Kafka UI first, fix
+the cause, then replay. Headers (including the trace context) are not replayed. Set `KAFKA_EXEC` to run the
+Kafka tools through another command than `docker compose -f infra/docker-compose.yaml exec -T kafka`.

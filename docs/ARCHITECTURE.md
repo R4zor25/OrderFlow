@@ -233,13 +233,13 @@ Responsibility: turn business events into customer and ops notifications. Uses M
 |---|---|---|---|---|
 | `orders.order-events.v1` | order-service | inventory-service, notification-service | orderId | 3 |
 | `inventory.stock-events.v1` | inventory-service | order-service, notification-service | orderId (sku for LowStock) | 3 |
-| `<topic>.DLT` | error handlers | none (inspect via Kafka UI) | same | 3 |
+| `<topic>.<group>.DLT` | error handler of that consumer group | none (inspect via Kafka UI, replay with `scripts/dlt-replay.sh`) | same | 3 |
 
 Keying by `orderId` puts one order's records in the same partition, where Kafka preserves append order. The relay also waits for every earlier unpublished event of that order before sending a later one; the key alone cannot prevent two concurrent relays from sending out of order.
 
 Consumer groups: `inventory-service`, `order-service`, `notification-service`.
 
-Every topic, including the DLTs, is declared with `retention.ms` = 7 days and `segment.ms` = 1 day by each service that uses it; Spring's `KafkaAdmin` (`modify-topic-configs`) and the ECS `kafka-topics` init container also correct existing topics that drifted from these values.
+Every topic, including the DLTs (each by the consumer group that writes it), is declared with `retention.ms` = 7 days and `segment.ms` = 1 day by each service that uses it; Spring's `KafkaAdmin` (`modify-topic-configs`) and the ECS `kafka-topics` init container also correct existing topics that drifted from these values.
 
 ### 5.2 Event envelope
 
@@ -295,6 +295,7 @@ Solution: the event row is written in the same transaction as the business chang
 - Spring Kafka `DefaultErrorHandler` with `FixedBackOff(1000 ms, 3)` and `DeadLetterPublishingRecoverer`. Deserialization and validation errors are non-retryable and go straight to the DLT. In order-service, an unknown order (`OrderNotFoundException`) or an impossible state transition (`InvalidOrderStateException`) gives the same result on every attempt, so it is non-retryable too.
 - inventory-service retries other failures with an unbounded exponential back-off (1 s, doubling, at most 30 s between attempts) instead of dead-lettering them, so a database outage pauses processing rather than losing an `OrderPlaced` or `OrderCancelled`. The back-off sleeps the consumer thread, so inventory runs one listener consumer per `orders.order-events.v1` partition (`concurrency: 3`); a failing record then holds only its own partition on that instance. The cost: an unexpected bug blocks that partition until fixed, and its orders are eventually cancelled by the order timeout; it shows as repeated error logs and consumer lag. Identifiable but invalid orders are not errors: inventory answers them with `StockReservationFailed`.
 - Micronaut: `@KafkaListener` with `RETRY_EXPONENTIALLY_ON_ERROR` (6 retries from 1 s, about a minute). After the last retry the record goes to the DLT and its offset is committed, so the partition keeps moving. Invalid events, including recipients over 320 characters, go to the DLT without retries. If the DLT publish itself fails, the record is skipped with an ERROR log as its only trace.
+- Every consumer group writes to its own DLT, `<topic>.<group>.DLT`, with diagnostic headers (`kafka_dlt-original-topic`, `-original-partition`, `-original-offset`, `-original-consumer-group`, `-exception-fqcn`, `-exception-message`); notification writes the same headers as Spring. Replay: `scripts/dlt-replay.sh <dlt-topic> <partition> <offset>` republishes one record to its source topic. Every group receives it again, and deduplication (`processed_event`, `notification.event_id`) makes that safe for events up to 14 days old; older records need a manual decision. Headers, including the trace context, are not replayed. Topics named `<topic>.DLT` from earlier versions are no longer written.
 
 ### 5.5 Saga (choreography)
 
