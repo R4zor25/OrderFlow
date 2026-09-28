@@ -1,5 +1,7 @@
 package com.orderflow.notification.application;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,10 +13,16 @@ public class NotificationDelivery {
 
     private final NotificationStore store;
     private final NotificationSender sender;
+    private final Counter sent;
+    private final Counter retry;
+    private final Counter failed;
 
-    public NotificationDelivery(NotificationStore store, NotificationSender sender) {
+    public NotificationDelivery(NotificationStore store, NotificationSender sender, MeterRegistry registry) {
         this.store = store;
         this.sender = sender;
+        this.sent = outcome(registry, "sent");
+        this.retry = outcome(registry, "retry");
+        this.failed = outcome(registry, "failed");
     }
 
     public void deliver(NotificationDraft draft) {
@@ -29,15 +37,23 @@ public class NotificationDelivery {
             }
             var outcome = recorded.get();
             if (outcome.failed()) {
+                failed.increment();
                 log.error("Notification delivery failed permanently for eventId={}, attempts={}, cause={}",
                         draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
             } else {
+                retry.increment();
                 log.warn("Notification delivery failed for eventId={}, attempts={}, cause={}; will retry",
                         draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
             }
             return;
         }
         store.markSent(draft.eventId());
+        sent.increment();
+    }
+
+    private static Counter outcome(MeterRegistry registry, String outcome) {
+        return Counter.builder("notifications.delivery").tag("outcome", outcome)
+                .description("Notification delivery attempts by outcome").register(registry);
     }
 
     public int retryDue() {

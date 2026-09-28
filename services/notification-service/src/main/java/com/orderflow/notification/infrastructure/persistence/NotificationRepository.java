@@ -62,4 +62,6 @@ public interface NotificationRepository extends CrudRepository<NotificationRow, 
     int extendLease(List<UUID> ids, Instant leaseUntil);
 
     List<NotificationRow> findByOrderIdOrderByCreatedAt(UUID orderId);
+
+    long countByStatus(String status);
 }

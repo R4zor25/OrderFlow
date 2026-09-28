@@ -1,5 +1,6 @@
 package com.orderflow.notification.messaging;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.json.JsonMapper;
 import io.opentelemetry.api.OpenTelemetry;
 import io.micronaut.configuration.kafka.exceptions.KafkaListenerException;
@@ -25,8 +26,11 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class NotificationEventListenerTest {
 
     private final RecordingPublisher publisher = new RecordingPublisher();
-    private final NotificationEventListener listener =
-            new NotificationEventListener(new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null, OpenTelemetry.noop());
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final DeadLetterMetrics deadLetterMetrics = new DeadLetterMetrics(registry);
+    private final NotificationEventListener listener = new NotificationEventListener(
+            new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null, OpenTelemetry.noop(),
+            deadLetterMetrics);
 
     @Test
     void ignoresUnknownEventWithoutDeadLettering() throws Exception {
@@ -49,6 +53,7 @@ class NotificationEventListenerTest {
                         "kafka_dlt-original-consumer-group", "notification-service",
                         "kafka_dlt-exception-fqcn", InvalidNotificationEventException.class.getName(),
                         "kafka_dlt-exception-message", "Cannot decode notification event")));
+        assertThat(deadLetters(NotificationEventDecoder.STOCK_TOPIC)).isEqualTo(1.0);
     }
 
     @Test
@@ -57,7 +62,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("processing failed", new IllegalStateException("temporary"),
                 listener, null, failedRecord);
-        new NotificationListenerExceptionHandler(publisher).handle(failure);
+        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
         assertThat(publisher.sent).containsExactly(new Published(
                 NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT", "order-123", "original-json",
                 Map.of("kafka_dlt-original-topic", NotificationEventDecoder.ORDER_TOPIC,
@@ -66,6 +71,7 @@ class NotificationEventListenerTest {
                         "kafka_dlt-original-consumer-group", "notification-service",
                         "kafka_dlt-exception-fqcn", IllegalStateException.class.getName(),
                         "kafka_dlt-exception-message", "temporary")));
+        assertThat(deadLetters(NotificationEventDecoder.ORDER_TOPIC)).isEqualTo(1.0);
     }
 
     @Test
@@ -74,7 +80,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("processing failed", new IllegalStateException("x".repeat(1500)),
                 listener, null, record);
-        new NotificationListenerExceptionHandler(publisher).handle(failure);
+        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
         assertThat(publisher.sent.getFirst().headers().get("kafka_dlt-exception-message")).hasSize(1000);
     }
 
@@ -84,7 +90,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("commit failed", new CommitFailedException("rebalance"),
                 listener, null, record);
-        new NotificationListenerExceptionHandler(publisher).handle(failure);
+        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
         assertThat(publisher.sent).isEmpty();
     }
 
@@ -106,8 +112,20 @@ class NotificationEventListenerTest {
             throw new IllegalStateException("broker unavailable");
         };
 
-        assertThatCode(() -> new NotificationListenerExceptionHandler(failing).handle(failure))
+        assertThatCode(() -> new NotificationListenerExceptionHandler(failing, deadLetterMetrics).handle(failure))
                 .doesNotThrowAnyException();
+        assertThat(deadLetters(NotificationEventDecoder.ORDER_TOPIC)).isZero();
+    }
+
+    @Test
+    void registersDeadLetterCountersBeforeTheFirstDeadLetter() {
+        assertThat(deadLetters(NotificationEventDecoder.ORDER_TOPIC)).isZero();
+        assertThat(deadLetters(NotificationEventDecoder.STOCK_TOPIC)).isZero();
+    }
+
+    private double deadLetters(String sourceTopic) {
+        return registry.get("messaging.dead.letters").tag("topic", sourceTopic + ".notification-service.DLT")
+                .counter().count();
     }
 
     private record Published(String topic, String key, String json, Map<String, String> headers) {

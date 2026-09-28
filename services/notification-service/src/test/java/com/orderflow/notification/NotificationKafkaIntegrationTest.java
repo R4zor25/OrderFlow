@@ -23,6 +23,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.containers.GenericContainer;
 import io.micronaut.json.JsonMapper;
+import io.micronaut.runtime.server.EmbeddedServer;
 import jakarta.inject.Inject;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -47,6 +48,9 @@ import static org.awaitility.Awaitility.await;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NotificationKafkaIntegrationTest implements TestPropertyProvider {
 
+    private static final String ORDER_DEAD_LETTER_COUNT =
+            "messaging_dead_letters_total\\{topic=\"orders\\.order-events\\.v1\\.notification-service\\.DLT\",?\\} 1\\.0";
+
     // Auto-create off, as in Compose and ECS, so the dead-letter topics must come from the service itself.
     private static final KafkaContainer kafka = new KafkaContainer("apache/kafka:4.3.1")
             .withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
@@ -57,6 +61,9 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
 
     @Inject
     JsonMapper jsonMapper;
+
+    @Inject
+    EmbeddedServer server;
 
     static {
         kafka.start();
@@ -151,6 +158,8 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 assertThat(text(headers, "kafka_dlt-exception-message")).isEqualTo("Cannot decode notification event");
             });
         }
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(prometheus()).containsPattern(ORDER_DEAD_LETTER_COUNT));
     }
 
     @Test
@@ -169,6 +178,23 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                     assertThat(config.get(TopicConfig.SEGMENT_MS_CONFIG).value()).isEqualTo("86400000");
                 }
             });
+        }
+    }
+
+    @Test
+    void publishesPrometheusMetricsWithoutAToken() throws Exception {
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(prometheus()).contains(
+                "notifications_pending", "notifications_failed", "notifications_delivery_total",
+                "messaging_dead_letters_total", "kafka_consumer_fetch_manager_records_lag_max"));
+    }
+
+    private String prometheus() throws Exception {
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(HttpRequest.newBuilder(URI.create(
+                    "http://localhost:" + server.getPort() + "/prometheus")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            return response.body();
         }
     }
 

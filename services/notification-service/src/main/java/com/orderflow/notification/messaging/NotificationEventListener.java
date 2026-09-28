@@ -32,6 +32,7 @@ public final class NotificationEventListener {
     private final NotificationDeadLetterPublisher deadLetterPublisher;
     private final NotificationProcessor processor;
     private final OpenTelemetry openTelemetry;
+    private final DeadLetterMetrics deadLetterMetrics;
 
     private static final TextMapGetter<ConsumerRecord<String, String>> HEADERS = new TextMapGetter<>() {
         @Override
@@ -50,11 +51,13 @@ public final class NotificationEventListener {
 
     public NotificationEventListener(NotificationEventDecoder decoder,
                                      NotificationDeadLetterPublisher deadLetterPublisher,
-                                     NotificationProcessor processor, OpenTelemetry openTelemetry) {
+                                     NotificationProcessor processor, OpenTelemetry openTelemetry,
+                                     DeadLetterMetrics deadLetterMetrics) {
         this.decoder = decoder;
         this.deadLetterPublisher = deadLetterPublisher;
         this.processor = processor;
         this.openTelemetry = openTelemetry;
+        this.deadLetterMetrics = deadLetterMetrics;
     }
 
     @Topic({NotificationEventDecoder.ORDER_TOPIC, NotificationEventDecoder.STOCK_TOPIC})
@@ -93,6 +96,7 @@ public final class NotificationEventListener {
         } catch (InvalidNotificationEventException invalid) {
             deadLetterPublisher.publish(DeadLetterHeaders.topic(record.topic()), record.key(), record.value(),
                     DeadLetterHeaders.of(record.topic(), record.partition(), record.offset(), invalid));
+            deadLetterMetrics.published(DeadLetterHeaders.topic(record.topic()));
             log.warn("Invalid notification event moved to DLT at topic={}, partition={}, offset={}",
                     record.topic(), record.partition(), record.offset());
         }

@@ -166,7 +166,7 @@ Tracing integration tests verify real HTTP and Kafka boundaries, persistence thr
 
 ## Business metrics and Prometheus
 
-Catalog, order and inventory expose `/actuator/prometheus` on their existing HTTP ports (local: 8081, 8082 and 8083). The endpoint serves Prometheus text exposition; a Prometheus server is not included. `/actuator/metrics/{name}` remains available for individual Micrometer measurements.
+Catalog, order and inventory expose `/actuator/prometheus` on their existing HTTP ports (local: 8081, 8082 and 8083); notification exposes `/prometheus` on 8084. The endpoint serves Prometheus text exposition; a Prometheus server is not included. `/actuator/metrics/{name}` remains available for individual Micrometer measurements.
 
 | Micrometer name | Labels | Increment condition |
 |---|---|---|
@@ -180,10 +180,11 @@ These counters increment after successful database commit. Rolled-back operation
 curl http://localhost:8081/actuator/prometheus
 curl http://localhost:8082/actuator/prometheus
 curl http://localhost:8083/actuator/prometheus
+curl http://localhost:8084/prometheus
 curl 'http://localhost:8082/actuator/metrics/orders.placed?tag=customerType:B2B'
 ```
 
-Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total` (reason `insufficient_stock` or `invalid_order`). Order and inventory expose `outbox_lag_seconds`, which queries the age of the oldest unpublished event of that service when sampled, and `messaging_dead_letters_total{topic}`, the records their consumer group wrote to its dead-letter topic. Order exposes the pricing circuit breaker and retry as `resilience4j_circuitbreaker_*` and `resilience4j_retry_*` (`name="pricing"`); catalog exposes price-cache hits and misses as `cache_gets_total{cache="price-tiers",result}`. Order and inventory also expose `outbox_parked`, the number of outbox events parked as undeliverable (see ARCHITECTURE §5.3 for re-queueing). Order also exposes `orders_pending_oldest_age_seconds`; orders pending longer than 15 minutes are cancelled automatically (see ARCHITECTURE §5.5).
+Prometheus exports the counters as `orders_placed_total`, `orders_rejected_total`, and `inventory_reservation_failed_total` (reason `insufficient_stock` or `invalid_order`). Order and inventory expose `outbox_lag_seconds`, which queries the age of the oldest unpublished event of that service when sampled, and `messaging_dead_letters_total{topic}`, the records their consumer group wrote to its dead-letter topic. Order exposes the pricing circuit breaker and retry as `resilience4j_circuitbreaker_*` and `resilience4j_retry_*` (`name="pricing"`); catalog exposes price-cache hits and misses as `cache_gets_total{cache="price-tiers",result}`. Notification exposes `notifications_delivery_total{outcome}`, the `notifications_pending` and `notifications_failed` gauges, `messaging_dead_letters_total{topic}` and the Kafka consumer metrics, including `kafka_consumer_fetch_manager_records_lag_max`. Order and inventory also expose `outbox_parked`, the number of outbox events parked as undeliverable (see ARCHITECTURE §5.3 for re-queueing). Order also exposes `orders_pending_oldest_age_seconds`; orders pending longer than 15 minutes are cancelled automatically (see ARCHITECTURE §5.5).
 
 Counters belong to one running application instance and reset on restart. A crash between database commit and the increment can miss a measurement; an instance can also stop between scrapes. Use them for operational rates and trends, not as a durable accounting ledger. With multiple instances, scrape each instance and aggregate rates across them. The current configuration exposes the endpoints without authentication; restrict management access in the deployment network.
 

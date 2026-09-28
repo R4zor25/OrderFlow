@@ -14,6 +14,7 @@ import com.orderflow.notification.application.NotificationStore;
 import com.orderflow.notification.application.NotificationProcessor;
 import com.orderflow.notification.config.NotificationSettings.Channel;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
 import jakarta.inject.Inject;
@@ -110,7 +111,7 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
                 store, new NotificationDelivery(store, draft -> {
                     attempts.incrementAndGet();
                     throw new IllegalStateException("Simulated delivery failure");
-                }));
+                }, new SimpleMeterRegistry()));
         Instant before = Instant.now();
 
         processing.process(event);

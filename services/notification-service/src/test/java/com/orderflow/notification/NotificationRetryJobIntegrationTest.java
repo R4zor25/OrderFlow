@@ -5,6 +5,7 @@ import com.orderflow.notification.application.NotificationDraft;
 import com.orderflow.notification.application.NotificationStore;
 import com.orderflow.notification.config.NotificationDeliverySettings;
 import com.orderflow.notification.config.NotificationSettings.Channel;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
 import jakarta.inject.Inject;
@@ -100,9 +101,10 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
     void reschedulesRowAfterFailedRetry() throws Exception {
         var draft = pending();
         makeDue(draft.eventId(), 2);
+        var registry = new SimpleMeterRegistry();
         var failing = new NotificationDelivery(store, ignored -> {
             throw new IllegalStateException("smtp down");
-        });
+        }, registry);
         Instant before = Instant.now();
 
         failing.retryDue();
@@ -119,20 +121,42 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
                         .isAfter(before.plus(settings.backoffAfter(3)).minusSeconds(1));
             }
         }
+        assertThat(outcome(registry, "retry")).isEqualTo(1.0);
+        assertThat(outcome(registry, "failed")).isZero();
+        assertThat(outcome(registry, "sent")).isZero();
     }
 
     @Test
     void marksRowFailedAfterMaxAttempts() throws Exception {
         var draft = pending();
         makeDue(draft.eventId(), settings.maxAttempts() - 1);
+        var registry = new SimpleMeterRegistry();
         var failing = new NotificationDelivery(store, ignored -> {
             throw new IllegalStateException("smtp down");
-        });
+        }, registry);
 
         failing.retryDue();
 
         assertThat(status(draft.eventId())).isEqualTo("FAILED");
         assertThat(store.claimDue()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
+        assertThat(outcome(registry, "failed")).isEqualTo(1.0);
+        assertThat(outcome(registry, "retry")).isZero();
+    }
+
+    @Test
+    void countsASuccessfulDelivery() throws Exception {
+        var draft = pending();
+        makeDue(draft.eventId(), 1);
+        var registry = new SimpleMeterRegistry();
+
+        new NotificationDelivery(store, ignored -> { }, registry).retryDue();
+
+        assertThat(status(draft.eventId())).isEqualTo("SENT");
+        assertThat(outcome(registry, "sent")).isEqualTo(1.0);
+    }
+
+    private static double outcome(SimpleMeterRegistry registry, String outcome) {
+        return registry.get("notifications.delivery").tag("outcome", outcome).counter().count();
     }
 
     @Inject

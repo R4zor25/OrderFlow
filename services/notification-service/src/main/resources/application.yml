@@ -10,6 +10,12 @@ micronaut:
       grace-period: 20s
   server:
     port: 8084
+  metrics:
+    enabled: true
+    export:
+      prometheus:
+        enabled: true
+        descriptions: true
   security:
     authentication: bearer
     token:
@@ -83,6 +89,9 @@ endpoints:
     enabled: true
     sensitive: false
     details-visible: NEVER
+  prometheus:
+    enabled: true
+    sensitive: false
 
 otel:
   service:
