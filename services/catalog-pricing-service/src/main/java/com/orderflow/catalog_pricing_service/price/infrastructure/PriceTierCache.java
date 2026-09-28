@@ -21,15 +21,17 @@ import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
 @Component
 public class PriceTierCache {
 
+    public static final String CACHE_NAME = "price-tiers";
+
     private static final Logger log = LoggerFactory.getLogger(PriceTierCache.class);
 
     private final Cache cache;
     private final PriceListEntryRepository repository;
 
     public PriceTierCache(CacheManager cacheManager, PriceListEntryRepository repository) {
-        this.cache = cacheManager.getCache("price-tiers");
+        this.cache = cacheManager.getCache(CACHE_NAME);
         if (this.cache == null) {
-            throw new IllegalStateException("price-tiers cache is not configured");
+            throw new IllegalStateException(CACHE_NAME + " cache is not configured");
         }
         this.repository = repository;
     }
