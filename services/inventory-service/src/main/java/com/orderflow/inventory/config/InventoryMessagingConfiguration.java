@@ -1,6 +1,7 @@
 package com.orderflow.inventory.config;
 
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -9,7 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.ConsumerRecordRecoverer;
+import org.springframework.kafka.listener.ConsumerAwareRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -47,10 +48,14 @@ public class InventoryMessagingConfiguration {
                 (record, exception) -> new TopicPartition(KafkaTopics.deadLetter(record.topic()), record.partition()));
             recoverer.setFailIfSendResultIsError(true);
             recoverer.setWaitForSendResultTimeout(properties.dltSendTimeout());
-            // Counted after a confirmed send: a failed publish throws before the increment.
-            ConsumerRecordRecoverer counted = (record, exception) -> {
-                recoverer.accept(record, exception);
-                registry.counter("messaging.dead.letters", "topic", KafkaTopics.deadLetter(record.topic())).increment();
+            // Registered up front so the series exists before the first dead letter.
+            Counter deadLetters = registry.counter("messaging.dead.letters", "topic",
+                KafkaTopics.deadLetter("orders.order-events.v1"));
+            // Consumer-aware, so the recoverer can still check that the DLT has the record's partition;
+            // counted after a confirmed send, because a failed publish throws before the increment.
+            ConsumerAwareRecordRecoverer counted = (record, consumer, exception) -> {
+                recoverer.accept(record, consumer, exception);
+                deadLetters.increment();
             };
 
             var backOff = new ExponentialBackOff(properties.initialInterval().toMillis(), properties.multiplier());
