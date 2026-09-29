@@ -103,6 +103,12 @@ class NotificationEventListenerTest {
     }
 
     @Test
+    void consumesWithOneThreadPerPartition() {
+        var listener = NotificationEventListener.class.getAnnotation(KafkaListener.class);
+        assertThat(listener.threadsValue()).isEqualTo("${notification.messaging.threads:3}");
+    }
+
+    @Test
     void deadLetterPublishFailureIsLoggedAndSwallowed() {
         var record = new ConsumerRecord<>(NotificationEventDecoder.ORDER_TOPIC, 1, 12,
                 "order-123", "original-json");

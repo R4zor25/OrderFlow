@@ -32,6 +32,8 @@ notification:
   ops-email: ${NOTIFICATION_OPS_EMAIL:ops@orderflow.test}
   messaging:
     enabled: false
+    # One consumer thread per partition of each topic, so a record in retry only holds its own partition.
+    threads: 3
     retry-delay: 1s
     retry-count: 6
   delivery:

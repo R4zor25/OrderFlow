@@ -1,6 +1,7 @@
 package com.orderflow.notification;
 
 import com.orderflow.notification.messaging.InvalidNotificationEventException;
+import io.micronaut.configuration.kafka.ConsumerRegistry;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
@@ -64,6 +65,9 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
 
     @Inject
     EmbeddedServer server;
+
+    @Inject
+    ConsumerRegistry consumers;
 
     static {
         kafka.start();
@@ -179,6 +183,11 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
                 }
             });
         }
+    }
+
+    @Test
+    void startsOneConsumerPerPartition() {
+        assertThat(consumers.getConsumerIds()).hasSize(3);
     }
 
     @Test
