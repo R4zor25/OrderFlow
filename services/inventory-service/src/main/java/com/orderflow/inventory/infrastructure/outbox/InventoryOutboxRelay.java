@@ -95,7 +95,12 @@ public class InventoryOutboxRelay {
                 }).name("inventory.outbox.publish").start();
                 try (var scope = tracer.withSpan(span)) {
                     kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                    log.info("Published outbox event eventId={} aggregateId={} eventType={}",
+                        event.id(), event.aggregateId(), event.eventType());
                     failed = false;
+                } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
+                    span.error(exception);
+                    throw exception;
                 } finally {
                     span.end();
                 }

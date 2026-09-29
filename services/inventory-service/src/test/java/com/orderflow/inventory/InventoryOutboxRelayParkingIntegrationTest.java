@@ -2,15 +2,19 @@ package com.orderflow.inventory;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.propagation.Propagator;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
@@ -23,11 +27,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,7 +55,38 @@ class InventoryOutboxRelayParkingIntegrationTest {
     @MockitoBean
     private KafkaTemplate<String, String> kafka;
 
+    @MockitoSpyBean
+    private Propagator propagator;
+
+    private final List<Span> spans = new CopyOnWriteArrayList<>();
+
     private final Set<UUID> undeliverable = ConcurrentHashMap.newKeySet();
+
+    @BeforeEach
+    void recordPublishSpans() {
+        spans.clear();
+        doAnswer(invocation -> {
+            Span.Builder builder = spy((Span.Builder) invocation.callRealMethod());
+            doAnswer(start -> {
+                Span span = spy((Span) start.callRealMethod());
+                spans.add(span);
+                return span;
+            }).when(builder).start();
+            return builder;
+        }).when(propagator).extract(any(), any());
+    }
+
+    @Test
+    void marksThePublishSpanAsFailedWhenTheSendFails() {
+        UUID failing = insert(UUID.randomUUID(), Instant.now());
+        undeliverable.add(failing);
+
+        relay.publishBatch();
+
+        assertThat(spans).hasSize(1);
+        verify(spans.getFirst()).error(any(Throwable.class));
+        verify(spans.getFirst()).end();
+    }
 
     @BeforeEach
     void broker() {
