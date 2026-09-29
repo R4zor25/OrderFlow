@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +30,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.kafka.KafkaContainer;
 import tools.jackson.databind.ObjectMapper;
@@ -73,6 +76,9 @@ class StockResultKafkaIntegrationTest {
 
     @Autowired
     private MeterRegistry registry;
+
+    @Autowired
+    private KafkaListenerEndpointRegistry listeners;
 
     @Test
     void consumesStockReservedAndWritesConfirmation() throws Exception {
@@ -202,6 +208,17 @@ class StockResultKafkaIntegrationTest {
             assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
             assertThat(order.getRejectionReason()).isEqualTo("Invalid order");
         });
+    }
+
+    @Test
+    void consumesEachStockEventPartitionOnItsOwnThread() {
+        var containers = listeners.getListenerContainers().stream()
+            .filter(container -> Arrays.asList(container.getContainerProperties().getTopics()).contains(TOPIC))
+            .toList();
+
+        assertThat(containers).singleElement()
+            .isInstanceOfSatisfying(ConcurrentMessageListenerContainer.class,
+                container -> assertThat(container.getConcurrency()).isEqualTo(3));
     }
 
     private double deadLetters() {

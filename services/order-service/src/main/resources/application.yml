@@ -63,6 +63,8 @@ spring:
     listener:
       observation-enabled: true
       ack-mode: record
+      # One consumer per stock-events partition, so a record in retry only holds its own partition.
+      concurrency: 3
     producer:
       key-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
       value-serializer: org.springframework.kafka.support.serializer.StringOrBytesSerializer
