@@ -185,7 +185,7 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
     void publishesPrometheusMetricsWithoutAToken() throws Exception {
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(prometheus()).contains(
                 "notifications_pending", "notifications_failed", "notifications_delivery_total",
-                "messaging_dead_letters_total", "kafka_consumer_fetch_manager_records_lag_max"));
+                "messaging_dead_letters_total").containsPattern("kafka_consumer_fetch_manager_records_lag_max_records\\{"));
     }
 
     private String prometheus() throws Exception {

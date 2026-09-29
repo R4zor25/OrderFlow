@@ -1,10 +1,12 @@
 package com.orderflow.notification;
 
+import com.orderflow.notification.application.NotificationBacklogMetrics;
 import com.orderflow.notification.application.NotificationDelivery;
 import com.orderflow.notification.application.NotificationDraft;
 import com.orderflow.notification.application.NotificationStore;
 import com.orderflow.notification.config.NotificationDeliverySettings;
 import com.orderflow.notification.config.NotificationSettings.Channel;
+import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
@@ -38,6 +40,9 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
 
     @Inject
     NotificationDeliverySettings settings;
+
+    @Inject
+    NotificationRepository repository;
 
     @Override
     public Map<String, String> getProperties() {
@@ -153,6 +158,43 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
 
         assertThat(status(draft.eventId())).isEqualTo("SENT");
         assertThat(outcome(registry, "sent")).isEqualTo(1.0);
+    }
+
+    @Test
+    void doesNotCountAFailureOnAnAlreadySettledRow() {
+        var draft = pending();
+        store.markSent(draft.eventId());
+        var registry = new SimpleMeterRegistry();
+
+        new NotificationDelivery(store, ignored -> {
+            throw new IllegalStateException("smtp down");
+        }, registry).deliver(draft);
+
+        assertThat(outcome(registry, "sent")).isZero();
+        assertThat(outcome(registry, "retry")).isZero();
+        assertThat(outcome(registry, "failed")).isZero();
+    }
+
+    @Test
+    void backlogGaugesMatchTheRowsByStatus() throws Exception {
+        pending();
+        var registry = new SimpleMeterRegistry();
+        new NotificationBacklogMetrics(repository).bindTo(registry);
+
+        assertThat(registry.get("notifications.pending").gauge().value()).isEqualTo(countWithStatus("PENDING"));
+        assertThat(registry.get("notifications.failed").gauge().value()).isEqualTo(countWithStatus("FAILED"));
+    }
+
+    private double countWithStatus(String status) throws Exception {
+        try (var connection = connection();
+             var query = connection.prepareStatement(
+                     "select count(*) from notifications.notification where status = ?")) {
+            query.setString(1, status);
+            try (var rows = query.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
     }
 
     private static double outcome(SimpleMeterRegistry registry, String outcome) {
