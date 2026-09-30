@@ -1,5 +1,6 @@
 """Execute the public scenario scripts against a disposable real stack."""
 
+import re
 import subprocess
 import shutil
 
@@ -25,8 +26,11 @@ class ScenarioScriptsTest(test_stack.ComposeStackTest):
         assignment = self.invoke('exec', '-T', 'kafka', '/opt/kafka/bin/kafka-consumer-groups.sh',
                                  '--bootstrap-server', 'kafka:9092', '--group', 'notification-service',
                                  '--describe', '--members', '--verbose')
-        self.assertIn('orders.order-events.v1:0,1,2', assignment.replace(' ', ''))
-        self.assertIn('inventory.stock-events.v1:0,1,2', assignment.replace(' ', ''))
+        # Notification runs one consumer per partition; together they must own every partition of both topics.
+        for topic in ('orders.order-events.v1', 'inventory.stock-events.v1'):
+            matches = re.findall(re.escape(topic) + r':([0-9,]+)', assignment.replace(' ', ''))
+            owned = {int(partition) for match in matches for partition in match.split(',')}
+            self.assertEqual(owned, {0, 1, 2}, assignment)
         self.run_script('smoke.sh', environment)
         if shutil.which('psql'):
             host, port = self.invoke('port', 'postgres', '5432').splitlines()[0].rsplit(':', 1)

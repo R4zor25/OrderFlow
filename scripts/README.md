@@ -214,6 +214,12 @@ an unprepared database. It never resets stock. On success it requires exactly
 per-order reservations and a valid stock invariant. The ten reservations remain
 in that test environment after the script finishes.
 
+The 50 orders carry different order IDs, so they spread over the three partitions
+and inventory reserves at most three of them at a time. The script proves the
+end-to-end outcome (exactly ten confirmations, no negative stock); heavy
+contention on the conditional update itself is covered by
+`ReservationServiceIntegrationTest`, which fires 50 concurrent reservations at one SKU.
+
 The repeatable integration test prepares ten units only in its own disposable
 stack, exercises both scripts and removes that stack:
 
