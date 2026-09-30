@@ -103,7 +103,7 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void consumesWithOneThreadPerPartition() {
+    void consumesWithOneThreadPerPartitionOfEachTopic() {
         var listener = NotificationEventListener.class.getAnnotation(KafkaListener.class);
         assertThat(listener.threadsValue()).isEqualTo("${notification.messaging.threads:3}");
     }

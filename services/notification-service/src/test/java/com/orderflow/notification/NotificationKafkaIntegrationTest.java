@@ -186,7 +186,7 @@ class NotificationKafkaIntegrationTest implements TestPropertyProvider {
     }
 
     @Test
-    void startsOneConsumerPerPartition() {
+    void startsOneConsumerThreadPerPartitionOfEachTopic() {
         assertThat(consumers.getConsumerIds()).hasSize(3);
     }
 

@@ -26,7 +26,7 @@ class ScenarioScriptsTest(test_stack.ComposeStackTest):
         assignment = self.invoke('exec', '-T', 'kafka', '/opt/kafka/bin/kafka-consumer-groups.sh',
                                  '--bootstrap-server', 'kafka:9092', '--group', 'notification-service',
                                  '--describe', '--members', '--verbose')
-        # Notification runs one consumer per partition; together they must own every partition of both topics.
+        # Notification runs one consumer thread per partition of each topic; together they own every partition.
         for topic in ('orders.order-events.v1', 'inventory.stock-events.v1'):
             matches = re.findall(re.escape(topic) + r':([0-9,]+)', assignment.replace(' ', ''))
             owned = {int(partition) for match in matches for partition in match.split(',')}

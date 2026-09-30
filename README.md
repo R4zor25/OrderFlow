@@ -285,8 +285,9 @@ The disposable integration test also prepares a ten-unit fixture and runs
 `scripts/oversell-test.sh`: 50 parallel orders must produce exactly ten
 confirmations, forty rejections and ten matching reservations. The standalone
 oversell script never resets stock and requires its fixture to be prepared first.
-It exercises the whole chain with at most three concurrent reservations; the
-50-way contention on the conditional update is proven by `ReservationServiceIntegrationTest`.
+It exercises the whole chain with at most three concurrent reservations; heavy
+contention on the conditional update (50 concurrent reservations at one SKU) is
+covered by `ReservationServiceIntegrationTest`.
 Use an exclusively owned test environment; these scripts create real orders.
 See [scenario configuration and limits](scripts/README.md#order-smoke-and-oversell-scenarios).
 
