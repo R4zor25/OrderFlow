@@ -18,4 +18,4 @@ COPY --from=build /build/extracted/snapshot-dependencies/ ./
 COPY --from=build /build/extracted/application/ ./
 USER 10001:10001
 EXPOSE 8082
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "application.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60", "-XX:+ExitOnOutOfMemoryError", "-XX:MaxMetaspaceSize=224m", "-jar", "application.jar"]

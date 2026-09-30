@@ -119,7 +119,7 @@ services:
   catalog-pricing-service:
     build:
       context: ../services/catalog-pricing-service
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1
     stop_grace_period: 30s
     ports:
@@ -147,7 +147,7 @@ services:
   order-service:
     build:
       context: ../services/order-service
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1
     stop_grace_period: 30s
     ports:
@@ -183,7 +183,7 @@ services:
   inventory-service:
     build:
       context: ../services/inventory-service
-    mem_limit: 512m
+    mem_limit: 768m
     cpus: 1
     stop_grace_period: 30s
     ports:

@@ -14,4 +14,4 @@ WORKDIR /application
 COPY --from=build /build/target/notification-service-*.jar application.jar
 USER 10001:10001
 EXPOSE 8084
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "application.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60", "-XX:+ExitOnOutOfMemoryError", "-XX:MaxMetaspaceSize=224m", "-jar", "application.jar"]

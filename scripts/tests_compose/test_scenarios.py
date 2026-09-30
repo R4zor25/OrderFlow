@@ -1,8 +1,10 @@
 """Execute the public scenario scripts against a disposable real stack."""
 
+import json
 import re
 import subprocess
 import shutil
+import urllib.request
 
 import test_stack
 
@@ -51,6 +53,34 @@ class ScenarioScriptsTest(test_stack.ComposeStackTest):
                                 env=environment, capture_output=True, text=True, timeout=30)
         self.assertNotEqual(result.returncode, 0, 'A depleted fixture must fail before sending more orders')
         self.assertIn('Expected 10 available units, found 0', result.stderr)
+        self.assert_memory_headroom()
+
+    def assert_memory_headroom(self):
+        # After the smoke and oversell traffic; a missing cgroup v2 file fails the invoke instead of passing.
+        memory = {}
+        for service, port in test_stack.APPLICATIONS.items():
+            peak = int(self.invoke('exec', '-T', service, 'cat', '/sys/fs/cgroup/memory.peak'))
+            limit = int(self.invoke('exec', '-T', service, 'cat', '/sys/fs/cgroup/memory.max'))
+            stat = dict(line.split() for line in
+                        self.invoke('exec', '-T', service, 'cat', '/sys/fs/cgroup/memory.stat').splitlines())
+            memory[service] = {'peak_mib': round(peak / 2**20, 1), 'limit_mib': round(limit / 2**20, 1),
+                               'anon_mib': round(int(stat['anon']) / 2**20, 1),
+                               'file_mib': round(int(stat['file']) / 2**20, 1),
+                               'metaspace_mib': round(self.metaspace_bytes(service, port) / 2**20, 1)}
+        (self.output / 'memory.json').write_text(json.dumps(memory, indent=2) + '\n')
+        for service, values in memory.items():
+            self.assertLessEqual(values['peak_mib'], 0.85 * values['limit_mib'], f'{service}: {values}')
+
+    def metaspace_bytes(self, service, port):
+        base = self.base_url(service, port)
+        if service == 'notification-service':
+            with urllib.request.urlopen(base + '/prometheus', timeout=10) as response:
+                body = response.read().decode()
+            metaspace = r'^jvm_memory_used_bytes\{(?=[^}]*id="Metaspace")[^}]*\} (\S+)$'
+            match = re.search(metaspace, body, re.MULTILINE)
+            self.assertIsNotNone(match, 'Metaspace gauge missing from notification /prometheus')
+            return float(match[1])
+        return self.read_json(base + '/actuator/metrics/jvm.memory.used?tag=id:Metaspace')['measurements'][0]['value']
 
     def run_script(self, name, environment):
         result = subprocess.run([str(ROOT / 'scripts' / name)], cwd=ROOT, env=environment,

@@ -12,6 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from benchmark_services import ROOT, command, wait_healthy, cleanup_resources, http_get
 
 
+METASPACE_MIB = 224
+JVM_FLAGS = ('-XX:MaxRAMPercentage=60', '-XX:+ExitOnOutOfMemoryError', f'-XX:MaxMetaspaceSize={METASPACE_MIB}m')
+
+
 class ServiceImageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -53,6 +57,8 @@ class ServiceImageTest(unittest.TestCase):
         name = self.project + '-' + service
         self.containers.append(name)
         spring = service != 'notification-service'
+        # Same limits as the ECS task definitions and Compose.
+        memory_mib = 768 if spring else 512
         env = ({'SPRING_DATASOURCE_URL': f'jdbc:postgresql://postgres:5432/orderflow?currentSchema={schema}',
                 'SPRING_DATASOURCE_USERNAME': 'orderflow', 'SPRING_DATASOURCE_PASSWORD': 'benchmark-only',
                 'SPRING_DATA_REDIS_HOST': 'redis', 'SPRING_KAFKA_BOOTSTRAP_SERVERS': 'kafka:9092'} if spring else
@@ -64,7 +70,7 @@ class ServiceImageTest(unittest.TestCase):
             prefix = 'ORDER' if service == 'order-service' else 'INVENTORY'
             env.update({prefix + '_MESSAGING_ENABLED': 'true', prefix + '_OUTBOX_RELAY_ENABLED': 'true'})
         args = ['docker', 'create', '--name', name, '--network', self.project + '_default',
-                '--memory', '512m', '--cpus', '1', '-p', f'127.0.0.1::{port}']
+                '--memory', f'{memory_mib}m', '--cpus', '1', '-p', f'127.0.0.1::{port}']
         for key, value in env.items():
             args += ['-e', f'{key}={value}']
         command(*args, image)
@@ -78,17 +84,21 @@ class ServiceImageTest(unittest.TestCase):
             self.assertNotEqual(command('docker', 'exec', name, 'id', '-u'), '0')
             proc = command('docker', 'exec', name, 'sh', '-c', 'tr "\\000" " " < /proc/1/cmdline')
             self.assertTrue(proc.startswith('java '), proc)
-            self.assertIn('-XX:MaxRAMPercentage=75', proc)
+            for flag in JVM_FLAGS:
+                self.assertIn(flag, proc)
             no_build_tools = subprocess.run(['docker', 'exec', '--user', '0', name, 'sh', '-c',
                 'command -v javac || command -v mvn || test -e /application/mvnw || test -d /application/src || test -d /root/.m2'],
                 capture_output=True, text=True)
             self.assertEqual(no_build_tools.returncode, 1, no_build_tools.stdout + no_build_tools.stderr)
-            heap = command('docker', 'exec', name, 'java', '-XX:MaxRAMPercentage=75',
+            heap = command('docker', 'exec', name, 'java', *JVM_FLAGS,
                            '-XX:+PrintFlagsFinal', '-version', include_stderr=True)
             (self.output / (service + '-runtime.txt')).write_text('PID 1: ' + proc + '\n' + heap + '\n')
             maximum = re.search(r'^\s*size_t MaxHeapSize\s*=\s*(\d+)', heap, re.MULTILINE)
             self.assertIsNotNone(maximum, heap)
-            self.assertEqual(int(maximum[1]), 384 * 1024 * 1024)
+            # The JVM aligns the heap, so 60% of the limit lands within a few MiB of the exact value.
+            self.assertLess(abs(int(maximum[1]) - 0.6 * memory_mib * 2**20), 4 * 2**20, maximum[1])
+            metaspace = re.search(r'^\s*size_t MaxMetaspaceSize\s*=\s*(\d+)', heap, re.MULTILINE)
+            self.assertEqual(int(metaspace[1]), METASPACE_MIB * 2**20)
             command('docker', 'stop', '--time', '30', name, timeout=40)
             state = json.loads(command('docker', 'inspect', '-f', '{{json .State}}', name))
             self.assertIn(state['ExitCode'], (0, 143), state)

@@ -29,7 +29,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.yaml up --build -d 
 docker compose --env-file infra/.env -f infra/docker-compose.yaml ps
 ```
 
-Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. Each application has 512 MiB memory, one CPU and a 30-second stop grace period. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
+Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. The Spring applications have 768 MiB memory and notification 512 MiB (the ECS limits), one CPU and a 30-second stop grace period; each JVM uses 60% of the limit as heap, caps metaspace at 224 MiB and exits on an out-of-memory error. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
 
 | Endpoint on the Mac | Address |
 |---|---|
