@@ -29,7 +29,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.yaml up --build -d 
 docker compose --env-file infra/.env -f infra/docker-compose.yaml ps
 ```
 
-Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. The Spring applications have 768 MiB memory and notification 512 MiB (the ECS limits), one CPU and a 30-second stop grace period; each JVM uses 60% of the limit as heap, caps metaspace at 224 MiB and exits on an out-of-memory error. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
+Compose builds and starts all four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak. The applications use their existing `local` profiles/environments with container-network addresses supplied at runtime. The Spring applications have 768 MiB memory and notification 512 MiB (the ECS limits), one CPU and a 30-second stop grace period; each JVM uses 45% of the limit as heap and caps metaspace at 224 MiB. A JVM out-of-memory error ends the process (`-XX:+ExitOnOutOfMemoryError`), as does a kernel OOM kill at the container limit: ECS replaces the task, a Compose container stops. The measured peaks are in ARCHITECTURE. Health checks call readiness; startup dependencies wait for `service_healthy`. These checks do not automatically repair a dependency failure after startup.
 
 | Endpoint on the Mac | Address |
 |---|---|
@@ -225,7 +225,7 @@ The builder uses Java 25 JDK and the service Maven wrapper. BuildKit caches Mave
 artifacts separately from image layers. Image packaging skips test execution;
 run `./mvnw verify` before building a release. The final image uses
 `eclipse-temurin:25-jre`, runs as UID/GID 10001, and starts Java directly as PID 1
-with `-XX:MaxRAMPercentage=75`. Spring images use extracted Boot layers;
+with `-XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`. Spring images use extracted Boot layers;
 notification uses its existing executable Micronaut JAR.
 
 Set a container memory limit when running an image. The heap percentage leaves

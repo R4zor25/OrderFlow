@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ('spring', 'spring-lazy', 'micronaut')
-JAVA_FLAGS = ('-XX:MaxRAMPercentage=60', '-XX:+ExitOnOutOfMemoryError', '-XX:MaxMetaspaceSize=224m',
+JAVA_FLAGS = ('-XX:MaxRAMPercentage=45', '-XX:+ExitOnOutOfMemoryError', '-XX:MaxMetaspaceSize=224m',
               '-XX:ActiveProcessorCount=1')
 BENCHMARK_SECRET = 'benchmark-only'
 # Must match KC_HOSTNAME in benchmark-compose.yaml; the published Keycloak port itself is ephemeral.

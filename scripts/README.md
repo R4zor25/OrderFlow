@@ -12,9 +12,12 @@ python3 scripts/benchmark_services.py
 
 The script runs `order-service`, `order-service` with lazy initialization, and
 `notification-service` sequentially with the same Java runtime image, 1 CPU quota,
-768 MiB container limit, and the production JVM flags (`-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
+768 MiB container limit, and the production JVM flags (`-XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
 The resolved image ID, repository digest, JVM version, JAR hashes and source commit
 are recorded. No native image or AOT build is used.
+The figures published in [ADR 0008](../docs/adr/0008-micronaut-comparison.md) were
+measured with the earlier `-Xms128m -Xmx256m` flags; a re-run uses the production
+flags and does not reproduce them exactly.
 
 A unique Compose project provides disposable PostgreSQL, Redis, Kafka and Keycloak
 without accessing the local Compose stack. Only Keycloak is published, on an
@@ -78,7 +81,7 @@ python3 scripts/benchmark_quote.py
 The second script compares four catalog configurations: platform/virtual threads,
 each with a fixed pool of 5 or 50 connections. Application defaults remain 10.
 It uses the packaged catalog JAR, one resolved Java 25 runtime image, 1 CPU,
-768 MiB container memory and the production JVM flags (`-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
+768 MiB container memory and the production JVM flags (`-XX:MaxRAMPercentage=45 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
 An isolated Compose project reuses the benchmark PostgreSQL/Redis/Keycloak definitions;
 its overlay limits PostgreSQL to 1 CPU/512 MiB and Redis to 0.5 CPU/128 MiB.
 Kafka is not started. No normal local database, volume or fixed host port is used.
@@ -140,7 +143,7 @@ python3 -m unittest discover -s scripts/tests_docker -v
 ```
 
 These four integration tests build the service Dockerfiles using service-local
-contexts. Each image runs with 512 MiB and one CPU against a uniquely named
+contexts. Each image runs with its ECS limit (Spring 768 MiB, notification 512 MiB) and one CPU against a uniquely named
 PostgreSQL/Redis/Kafka stack. Tests verify real HTTP readiness and liveness,
 non-root execution, Java as PID 1, heap configuration, absence of build tools and
 shutdown without OOM or forced SIGKILL. They run separately from the fast Python

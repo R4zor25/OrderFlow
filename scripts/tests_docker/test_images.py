@@ -13,7 +13,7 @@ from benchmark_services import ROOT, command, wait_healthy, cleanup_resources, h
 
 
 METASPACE_MIB = 224
-JVM_FLAGS = ('-XX:MaxRAMPercentage=60', '-XX:+ExitOnOutOfMemoryError', f'-XX:MaxMetaspaceSize={METASPACE_MIB}m')
+JVM_FLAGS = ('-XX:MaxRAMPercentage=45', '-XX:+ExitOnOutOfMemoryError', f'-XX:MaxMetaspaceSize={METASPACE_MIB}m')
 
 
 class ServiceImageTest(unittest.TestCase):
@@ -95,9 +95,10 @@ class ServiceImageTest(unittest.TestCase):
             (self.output / (service + '-runtime.txt')).write_text('PID 1: ' + proc + '\n' + heap + '\n')
             maximum = re.search(r'^\s*size_t MaxHeapSize\s*=\s*(\d+)', heap, re.MULTILINE)
             self.assertIsNotNone(maximum, heap)
-            # The JVM aligns the heap, so 60% of the limit lands within a few MiB of the exact value.
-            self.assertLess(abs(int(maximum[1]) - 0.6 * memory_mib * 2**20), 4 * 2**20, maximum[1])
+            # The JVM aligns the heap, so 45% of the limit lands within a few MiB of the exact value.
+            self.assertLess(abs(int(maximum[1]) - 0.45 * memory_mib * 2**20), 4 * 2**20, maximum[1])
             metaspace = re.search(r'^\s*size_t MaxMetaspaceSize\s*=\s*(\d+)', heap, re.MULTILINE)
+            self.assertIsNotNone(metaspace, heap)
             self.assertEqual(int(metaspace[1]), METASPACE_MIB * 2**20)
             command('docker', 'stop', '--time', '30', name, timeout=40)
             state = json.loads(command('docker', 'inspect', '-f', '{{json .State}}', name))

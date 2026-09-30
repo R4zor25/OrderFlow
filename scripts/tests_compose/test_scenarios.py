@@ -66,21 +66,33 @@ class ScenarioScriptsTest(test_stack.ComposeStackTest):
             memory[service] = {'peak_mib': round(peak / 2**20, 1), 'limit_mib': round(limit / 2**20, 1),
                                'anon_mib': round(int(stat['anon']) / 2**20, 1),
                                'file_mib': round(int(stat['file']) / 2**20, 1),
-                               'metaspace_mib': round(self.metaspace_bytes(service, port) / 2**20, 1)}
+                               'metaspace_mib': self.jvm_mib(service, port, 'used', 'id', 'Metaspace'),
+                               'heap_committed_mib': self.jvm_mib(service, port, 'committed', 'area', 'heap'),
+                               'heap_max_mib': self.jvm_mib(service, port, 'max', 'area', 'heap')}
+            values = memory[service]
+            # The scenario never fills the heap; projecting it to its maximum shows the headroom left for a full heap.
+            values['projected_full_heap_mib'] = round(
+                values['peak_mib'] - values['heap_committed_mib'] + values['heap_max_mib'], 1)
         (self.output / 'memory.json').write_text(json.dumps(memory, indent=2) + '\n')
         for service, values in memory.items():
             self.assertLessEqual(values['peak_mib'], 0.85 * values['limit_mib'], f'{service}: {values}')
+            self.assertLessEqual(values['projected_full_heap_mib'], 0.9 * values['limit_mib'], f'{service}: {values}')
 
-    def metaspace_bytes(self, service, port):
+    def jvm_mib(self, service, port, kind, tag, value):
+        return round(self.jvm_bytes(service, port, kind, tag, value) / 2**20, 1)
+
+    def jvm_bytes(self, service, port, kind, tag, value):
         base = self.base_url(service, port)
         if service == 'notification-service':
             with urllib.request.urlopen(base + '/prometheus', timeout=10) as response:
                 body = response.read().decode()
-            metaspace = r'^jvm_memory_used_bytes\{(?=[^}]*id="Metaspace")[^}]*\} (\S+)$'
-            match = re.search(metaspace, body, re.MULTILINE)
-            self.assertIsNotNone(match, 'Metaspace gauge missing from notification /prometheus')
-            return float(match[1])
-        return self.read_json(base + '/actuator/metrics/jvm.memory.used?tag=id:Metaspace')['measurements'][0]['value']
+            line = r'^jvm_memory_' + kind + r'_bytes\{(?=[^}]*' + tag + '="' + value + r'")[^}]*\} (\S+)$'
+            values = [float(match) for match in re.findall(line, body, re.MULTILINE)]
+            self.assertTrue(values, f'jvm_memory_{kind}_bytes {tag}={value} missing from notification /prometheus')
+            # One series per memory pool; their sum matches the Spring actuator aggregate.
+            return sum(value for value in values if value > 0)
+        metric = self.read_json(base + f'/actuator/metrics/jvm.memory.{kind}?tag={tag}:{value}')
+        return metric['measurements'][0]['value']
 
     def run_script(self, name, environment):
         result = subprocess.run([str(ROOT / 'scripts' / name)], cwd=ROOT, env=environment,
