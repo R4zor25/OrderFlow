@@ -21,7 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ('spring', 'spring-lazy', 'micronaut')
-JAVA_FLAGS = ('-Xms128m', '-Xmx256m', '-XX:ActiveProcessorCount=1')
+JAVA_FLAGS = ('-XX:MaxRAMPercentage=60', '-XX:+ExitOnOutOfMemoryError', '-XX:MaxMetaspaceSize=224m',
+              '-XX:ActiveProcessorCount=1')
 BENCHMARK_SECRET = 'benchmark-only'
 # Must match KC_HOSTNAME in benchmark-compose.yaml; the published Keycloak port itself is ephemeral.
 KEYCLOAK_ISSUER = 'http://localhost:8180/realms/orderflow'

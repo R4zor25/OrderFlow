@@ -22,7 +22,8 @@ from benchmark_services import (ROOT, SERVICE_GRANT, cleanup_resources, command,
                                 jwt_env, keycloak_token, wait_healthy)
 
 VARIANTS = ((False, 5), (True, 5), (False, 50), (True, 50))
-JAVA_FLAGS = ('-Xms128m', '-Xmx256m', '-XX:ActiveProcessorCount=1')
+JAVA_FLAGS = ('-XX:MaxRAMPercentage=60', '-XX:+ExitOnOutOfMemoryError', '-XX:MaxMetaspaceSize=224m',
+              '-XX:ActiveProcessorCount=1')
 # accessTokenLifespan of infra/keycloak/orderflow-realm.json; one token serves a whole load phase.
 TOKEN_LIFETIME_SECONDS = 300
 REQUEST = json.dumps({'customerGroup': 'B2B_GOLD',

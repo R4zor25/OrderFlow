@@ -12,7 +12,7 @@ python3 scripts/benchmark_services.py
 
 The script runs `order-service`, `order-service` with lazy initialization, and
 `notification-service` sequentially with the same Java runtime image, 1 CPU quota,
-768 MiB container limit, and `-Xms128m -Xmx256m -XX:ActiveProcessorCount=1`.
+768 MiB container limit, and the production JVM flags (`-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
 The resolved image ID, repository digest, JVM version, JAR hashes and source commit
 are recorded. No native image or AOT build is used.
 
@@ -78,7 +78,7 @@ python3 scripts/benchmark_quote.py
 The second script compares four catalog configurations: platform/virtual threads,
 each with a fixed pool of 5 or 50 connections. Application defaults remain 10.
 It uses the packaged catalog JAR, one resolved Java 25 runtime image, 1 CPU,
-768 MiB container memory and `-Xms128m -Xmx256m -XX:ActiveProcessorCount=1`.
+768 MiB container memory and the production JVM flags (`-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -XX:MaxMetaspaceSize=224m`) plus `-XX:ActiveProcessorCount=1`.
 An isolated Compose project reuses the benchmark PostgreSQL/Redis/Keycloak definitions;
 its overlay limits PostgreSQL to 1 CPU/512 MiB and Redis to 0.5 CPU/128 MiB.
 Kafka is not started. No normal local database, volume or fixed host port is used.
