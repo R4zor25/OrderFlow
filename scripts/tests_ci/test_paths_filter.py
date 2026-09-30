@@ -14,8 +14,15 @@ SERVICES = {'catalog-pricing-service', 'order-service', 'inventory-service', 'no
 @unittest.skipUnless(os.environ.get('PATHS_FILTER_ACTION'), 'Set PATHS_FILTER_ACTION to the pinned action dist/index.js')
 class ChangedServicesTest(unittest.TestCase):
     def selected_services(self, files):
-        filters = ROOT / '.github/filters.yaml'
-        self.assertTrue(filters.is_file(), 'Missing changed-service filter configuration')
+        lines = self.run_filter(files, '.github/filters.yaml')
+        for index, line in enumerate(lines):
+            if line.startswith('changes<<'):
+                return set(json.loads(lines[index + 1]))
+        self.fail('Action did not emit the changed-service matrix: ' + '\n'.join(lines))
+
+    def run_filter(self, files, filters_file):
+        filters = ROOT / filters_file
+        self.assertTrue(filters.is_file(), 'Missing filter configuration ' + filters_file)
         with tempfile.TemporaryDirectory(prefix='orderflow-ci-filter-') as temporary:
             repo = Path(temporary)
             def git(*args):
@@ -47,11 +54,7 @@ class ChangedServicesTest(unittest.TestCase):
             result = subprocess.run(['node', os.environ['PATHS_FILTER_ACTION']], cwd=repo,
                                     env=environment, text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            lines = output.read_text().splitlines()
-            for index, line in enumerate(lines):
-                if line.startswith('changes<<'):
-                    return set(json.loads(lines[index + 1]))
-            self.fail('Action did not emit the changed-service matrix: ' + output.read_text())
+            return output.read_text().splitlines()
 
     def test_inventory_change_selects_only_inventory(self):
         self.assertEqual(self.selected_services(['services/inventory-service/src/main/java/Stock.java']),
@@ -66,8 +69,17 @@ class ChangedServicesTest(unittest.TestCase):
     def test_root_build_change_selects_every_service(self):
         self.assertEqual(self.selected_services(['pom.xml']), SERVICES)
 
-    def test_infrastructure_change_selects_every_service(self):
-        self.assertEqual(self.selected_services(['infra/docker-compose.yaml']), SERVICES)
+    def test_filter_configuration_change_selects_every_service(self):
+        self.assertEqual(self.selected_services(['.github/filters.yaml']), SERVICES)
+
+    def test_infrastructure_change_selects_no_service(self):
+        self.assertEqual(self.selected_services(['infra/docker-compose.yaml']), set())
+
+    def test_script_change_selects_no_service(self):
+        self.assertEqual(self.selected_services(['scripts/smoke.sh']), set())
+
+    def test_deploy_workflow_change_selects_no_service(self):
+        self.assertEqual(self.selected_services(['.github/workflows/deploy.yml']), set())
 
     def test_documentation_change_selects_no_service(self):
         self.assertEqual(self.selected_services(['README.md', 'docs/ARCHITECTURE.md']), set())
