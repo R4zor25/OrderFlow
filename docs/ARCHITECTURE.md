@@ -404,7 +404,7 @@ Local Compose orchestration:
 
 Continuous integration:
 
-- `.github/workflows/ci.yml` detects affected services on PRs and main pushes, then runs independent Java 25 verification and ARM64 Docker builds without publication. Shared contracts and build/CI configuration select all services; infrastructure and script changes select the Terraform job (`fmt`, `validate`, `test`) and the Docker image and Compose stack suites instead, and workflow changes run actionlint. Only pull requests cancel superseded runs.
+- `.github/workflows/ci.yml` detects affected services on PRs and main pushes, then runs independent Java 25 verification and ARM64 Docker builds without publication. Shared contracts and build/CI configuration select all services; Terraform changes run the Terraform job (`fmt`, `validate`, `test`), service, infrastructure, script and contract changes run the Docker image and Compose stack suites, and workflow changes run actionlint. Only pull requests cancel superseded runs; every main push has its own concurrency group.
 - Maven's optional `coverage` profile creates JaCoCo XML/HTML reports. Available test/coverage reports are uploaded after success or failure. A stable `CI result` job distinguishes valid empty selections from failed or skipped selected jobs.
 - The workflow does not deploy or enable branch protection. Hosted operation requires a GitHub repository; local checks and outstanding hosted validation are documented in [CI.md](CI.md).
 

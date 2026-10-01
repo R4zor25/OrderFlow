@@ -7,6 +7,7 @@ catalog-pricing-service:
   - '.mvn/**'
   - '.github/workflows/ci.yml'
   - '.github/filters.yaml'
+  - '.github/check-filters.yaml'
 order-service:
   - 'services/order-service/**'
   - 'contracts/**'
@@ -16,6 +17,7 @@ order-service:
   - '.mvn/**'
   - '.github/workflows/ci.yml'
   - '.github/filters.yaml'
+  - '.github/check-filters.yaml'
 inventory-service:
   - 'services/inventory-service/**'
   - 'contracts/**'
@@ -25,6 +27,7 @@ inventory-service:
   - '.mvn/**'
   - '.github/workflows/ci.yml'
   - '.github/filters.yaml'
+  - '.github/check-filters.yaml'
 notification-service:
   - 'services/notification-service/**'
   - 'contracts/**'
@@ -34,3 +37,4 @@ notification-service:
   - '.mvn/**'
   - '.github/workflows/ci.yml'
   - '.github/filters.yaml'
+  - '.github/check-filters.yaml'

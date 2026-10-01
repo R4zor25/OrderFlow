@@ -9,8 +9,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  # A newer push to main must not cancel the run that tests an earlier service change.
+  # Each main push gets its own group, so a newer push neither cancels nor replaces a pending run
+  # that tests an earlier service change; pull requests share one group and cancel superseded runs.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

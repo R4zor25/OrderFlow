@@ -13,7 +13,7 @@ target. A running Docker daemon is needed for the real Testcontainers tests.
 |---|---|
 | `services/<service>/**` | That service |
 | Multiple service directories | Those services |
-| `contracts/**`, `.github/workflows/ci.yml`, `.github/filters.yaml` | All four |
+| `contracts/**`, `.github/workflows/ci.yml`, `.github/filters.yaml`, `.github/check-filters.yaml` | All four |
 | Root `pom.xml`, Maven wrappers or `.mvn/**` | All four |
 | `infra/**`, `scripts/**`, `.github/workflows/deploy.yml` | None (see the check jobs below) |
 | Only README or documentation | None |
@@ -61,8 +61,10 @@ Artifacts are named `reports-<service>` and retained for seven days. If compilat
 fails before any report exists, the upload warns about missing files; the failed
 build remains failed. Matrix jobs use `fail-fast: false` so another service's
 failure does not cancel their diagnostic results. A newer push to the same pull
-request cancels its older run; pushes to `main` never cancel each other, because a
-later documentation-only push would otherwise leave an earlier service change untested.
+request cancels its older run. Every push to `main` gets its own concurrency group
+(keyed by the run ID), so no later push cancels or replaces a running or pending main
+run; a shared group would let a documentation-only push replace a pending run that
+tests an earlier service change.
 
 ## Required status and permissions
 

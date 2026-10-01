@@ -115,3 +115,7 @@ class ChangedServicesTest(unittest.TestCase):
 
     def test_documentation_change_selects_no_check(self):
         self.assertEqual(self.checks(['README.md']), set())
+
+    def test_check_filter_change_selects_every_check_and_every_service(self):
+        self.assertEqual(self.checks(['.github/check-filters.yaml']), CHECKS)
+        self.assertEqual(self.selected_services(['.github/check-filters.yaml']), SERVICES)

@@ -297,8 +297,8 @@ See [scenario configuration and limits](scripts/README.md#order-smoke-and-overse
 `main`. Path filters select affected services, which run Java 25 Maven verification
 with real Testcontainers, generate coverage reports and build ARM64 Docker images
 without publishing. Common contracts/configuration changes select every service;
-infrastructure and script changes run Terraform checks and the Docker image and
-Compose stack suites instead; documentation-only changes skip all of them. `CI result` provides one stable
+Terraform changes run Terraform checks, infrastructure and script changes run the
+Docker image and Compose stack suites; documentation-only changes skip all of them. `CI result` provides one stable
 required status. See [CI policy and local verification](docs/CI.md).
 
 The workflow is prepared locally; hosted execution and branch protection still
