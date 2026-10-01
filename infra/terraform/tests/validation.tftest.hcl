@@ -1,4 +1,9 @@
 mock_provider "aws" {
+  mock_resource "aws_db_instance" {
+    defaults = {
+      master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:rds!db-demo", kms_key_id = "alias/aws/secretsmanager", secret_status = "active" }]
+    }
+  }
   mock_data "aws_caller_identity" { defaults = { account_id = "123456789012" } }
   mock_data "aws_partition" { defaults = { partition = "aws" } }
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::123456789012:role/orderflow-runtime" } }

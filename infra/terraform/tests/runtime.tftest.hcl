@@ -1,4 +1,9 @@
 mock_provider "aws" {
+  mock_resource "aws_db_instance" {
+    defaults = {
+      master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:rds!db-demo", kms_key_id = "alias/aws/secretsmanager", secret_status = "active" }]
+    }
+  }
   mock_data "aws_caller_identity" { defaults = { account_id = "123456789012" } }
   mock_data "aws_partition" { defaults = { partition = "aws" } }
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::123456789012:role/orderflow-runtime" } }
@@ -56,8 +61,8 @@ run "bootstrap_runtime" {
     error_message = "Proxy ingress and client aliases must use distinct correct ports."
   }
   assert {
-    condition     = (alltrue([for name, t in aws_ecs_task_definition.application : length(jsondecode(t.container_definitions)[0].secrets) == (name == "order-service" ? 2 : 1) && jsondecode(t.container_definitions)[0].secrets[0].valueFrom == aws_ssm_parameter.db_password.arn && jsondecode(t.container_definitions)[0].secrets[0].name == "${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_PASSWORD" && alltrue([for e in jsondecode(t.container_definitions)[0].environment : !endswith(e.name, "PASSWORD")])]))
-    error_message = "Database passwords must only be injected from SSM secrets."
+    condition     = (alltrue([for name, t in aws_ecs_task_definition.application : length(jsondecode(t.container_definitions)[0].secrets) == (name == "order-service" ? 2 : 1) && jsondecode(t.container_definitions)[0].secrets[0].valueFrom == "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" && jsondecode(t.container_definitions)[0].secrets[0].name == "${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_PASSWORD" && alltrue([for e in jsondecode(t.container_definitions)[0].environment : !endswith(e.name, "PASSWORD")])]))
+    error_message = "Database passwords must only be injected from the RDS-managed secret."
   }
   assert {
     condition     = alltrue([for t in aws_ecs_task_definition.application : t.skip_destroy])
@@ -84,8 +89,8 @@ run "bootstrap_runtime" {
     error_message = "Log retention must bound demo storage."
   }
   assert {
-    condition     = (length(jsondecode(aws_iam_role_policy.execution.policy).Statement) == 4 && jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Action == ["ssm:GetParameters"] && toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Resource) == toset(concat([aws_ssm_parameter.db_password.arn], [for p in aws_ssm_parameter.keycloak : p.arn])))
-    error_message = "Execution role must read only the database and Keycloak parameters."
+    condition     = (length(jsondecode(aws_iam_role_policy.execution.policy).Statement) == 5 && jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Action == ["ssm:GetParameters"] && toset(jsondecode(aws_iam_role_policy.execution.policy).Statement[3].Resource) == toset([for p in aws_ssm_parameter.keycloak : p.arn]) && jsondecode(aws_iam_role_policy.execution.policy).Statement[4].Action == ["secretsmanager:GetSecretValue"] && jsondecode(aws_iam_role_policy.execution.policy).Statement[4].Resource == [aws_db_instance.main.master_user_secret[0].secret_arn])
+    error_message = "Execution role must read only the Keycloak parameters and the database secret."
   }
   assert {
     condition     = (alltrue([for name, rule in aws_vpc_security_group_ingress_rule.service_connect : rule.from_port == lookup({ catalog-pricing-service = 18081, order-service = 18082, inventory-service = 18083, notification-service = 18084, kafka = 19092, redis = 16379 }, name) && rule.to_port == rule.from_port && rule.referenced_security_group_id == aws_security_group.tasks.id && rule.security_group_id == aws_security_group.tasks.id]))
@@ -192,7 +197,8 @@ run "bootstrap_runtime" {
       !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_DB_SCHEMA") &&
       !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_PROXY_HEADERS") &&
       toset([for s in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].secrets : s.name]) ==
-      toset(["KC_DB_PASSWORD", "KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD", "ORDER_SERVICE_CLIENT_SECRET", "DEMO_USER_PASSWORD"])
+      toset(["KC_DB_PASSWORD", "KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD", "ORDER_SERVICE_CLIENT_SECRET", "DEMO_USER_PASSWORD"]) &&
+      contains([for s in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].secrets : "${s.name}=${s.valueFrom}"], "KC_DB_PASSWORD=${aws_db_instance.main.master_user_secret[0].secret_arn}:password::")
     )
     error_message = "Keycloak must run the release image in production mode against RDS with SSM secrets."
   }
@@ -234,8 +240,8 @@ run "bootstrap_runtime" {
     error_message = "Keycloak secrets must be SecureString parameters."
   }
   assert {
-    condition     = toset(one([for s in jsondecode(aws_iam_role_policy.execution.policy).Statement : s.Resource if contains(s.Action, "ssm:GetParameters")])) == toset(concat([aws_ssm_parameter.db_password.arn], [for p in aws_ssm_parameter.keycloak : p.arn]))
-    error_message = "The execution role may read exactly the database and Keycloak parameters."
+    condition     = toset(one([for s in jsondecode(aws_iam_role_policy.execution.policy).Statement : s.Resource if contains(s.Action, "ssm:GetParameters")])) == toset([for p in aws_ssm_parameter.keycloak : p.arn])
+    error_message = "The execution role may read exactly the Keycloak parameters through SSM."
   }
   assert {
     condition = alltrue([for name in ["catalog-pricing-service", "order-service"] :

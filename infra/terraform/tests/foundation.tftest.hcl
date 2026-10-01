@@ -1,4 +1,9 @@
 mock_provider "aws" {
+  mock_resource "aws_db_instance" {
+    defaults = {
+      master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:rds!db-demo", kms_key_id = "alias/aws/secretsmanager", secret_status = "active" }]
+    }
+  }
   mock_data "aws_caller_identity" { defaults = { account_id = "123456789012" } }
   mock_data "aws_partition" { defaults = { partition = "aws" } }
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::123456789012:role/orderflow-runtime" } }
@@ -80,10 +85,8 @@ run "foundation_contract" {
     error_message = "Only tasks may connect to the PostgreSQL port."
   }
   assert {
-    condition = (aws_ssm_parameter.db_password.type == "SecureString" &&
-      aws_ssm_parameter.db_password.value == random_password.database.result &&
-    aws_db_instance.main.password == random_password.database.result)
-    error_message = "RDS and SSM must use the same generated password."
+    condition     = aws_db_instance.main.manage_master_user_password == true && aws_db_instance.main.password == null
+    error_message = "RDS must keep the master password in Secrets Manager, not in Terraform state."
   }
   assert {
     condition = (aws_db_instance.main.backup_retention_period == 0 &&
@@ -93,7 +96,7 @@ run "foundation_contract" {
   assert {
     condition = (
       output.database_name == "orderflow" && output.database_username == "orderflow" &&
-      output.database_password_parameter_arn == aws_ssm_parameter.db_password.arn &&
+      output.database_secret_arn == aws_db_instance.main.master_user_secret[0].secret_arn &&
       toset(keys(output.ecr_repository_urls)) == toset(keys(aws_ecr_repository.service)) &&
       output.task_security_group_id == aws_security_group.tasks.id &&
       toset(output.subnet_ids) == toset(data.aws_subnets.default.ids) &&

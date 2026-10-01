@@ -11,7 +11,7 @@ the deployment workflow are not implemented yet.
   the five latest images. Expiration is asynchronous and can remove rollback images.
 - Existing default VPC/subnets in at least two availability zones; no new VPC or NAT.
 - Non-public PostgreSQL 17 RDS, `db.t4g.micro`, Single-AZ, encrypted 20 GiB gp3.
-- Generated database password in SSM SecureString and private local Terraform state.
+- RDS-managed master password in AWS Secrets Manager (`manage_master_user_password`); it is not in the Terraform state.
 - One ECS cluster, Cloud Map HTTP namespace, seven independent Fargate services:
   catalog-pricing, order, inventory, notification, Kafka, Redis and Keycloak.
 - One internet-facing HTTP ALB, five IP target groups, path routing and default 404.
@@ -95,8 +95,11 @@ requested, but full hostname/CA verification is not configured. The shared demo
 user is not production isolation.
 
 The execution role pulls ECR images, writes existing log streams and reads only
-the DB and the four Keycloak SSM parameters via `ssm:GetParameters`. ECS injects them
-with the container `secrets` field. The separate task role has no attached permissions;
+the four Keycloak SSM parameters via `ssm:GetParameters` and the RDS-managed database
+secret via `secretsmanager:GetSecretValue`. ECS injects them with the container `secrets`
+field; the database password is the secret's `password` key. RDS rotates that secret
+every seven days by default: running tasks keep their open connections but cannot open
+new ones with the old password, so redeploy (force a new deployment) after a rotation. The separate task role has no attached permissions;
 application code makes no AWS API calls. No GitHub deploy role exists yet.
 
 Kafka (`apache/kafka:4.3.1`) is one combined KRaft node, replication factor one,
@@ -208,7 +211,8 @@ publicly; target group health checks go directly to tasks.
 
 ## State and teardown
 
-Local state and saved plans contain secrets. Sensitive output masking is not
+Local state and saved plans still contain the generated Keycloak secrets (the database
+password is no longer among them). Sensitive output masking is not
 state encryption. State/backups, personal tfvars, provider files, crash logs and
 `*.tfplan` files stay excluded; keep `.terraform.lock.hcl` in Git. Do not rename
 saved plans to unignored files. Keep state to manage the resources; deleting it

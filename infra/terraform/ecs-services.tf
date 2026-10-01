@@ -113,7 +113,7 @@ resource "aws_ecs_task_definition" "application" {
     portMappings = [{ name = "${each.value.alias}-http", containerPort = each.value.port, hostPort = each.value.port, protocol = "tcp", appProtocol = "http" }]
     environment  = [for name, value in each.value.environment : { name = name, value = value }]
     secrets = concat(
-      [{ name = "${each.value.db_prefix}_DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }],
+      [{ name = "${each.value.db_prefix}_DB_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" }],
       [for name, key in lookup(each.value, "keycloak_secrets", {}) : { name = name, valueFrom = aws_ssm_parameter.keycloak[key].arn }]
     )
     healthCheck = { command = ["CMD-SHELL", each.value.health_command], interval = 10, timeout = 5, retries = 3, startPeriod = 60 }

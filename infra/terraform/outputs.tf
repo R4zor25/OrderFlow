@@ -28,9 +28,9 @@ output "database_username" {
   value       = aws_db_instance.main.username
 }
 
-output "database_password_parameter_arn" {
-  description = "SSM parameter ARN for later ECS secret injection; not the password value."
-  value       = aws_ssm_parameter.db_password.arn
+output "database_secret_arn" {
+  description = "Secrets Manager secret holding the RDS-managed master password (read by ECS, never stored in state)."
+  value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
 output "ecr_repository_urls" {

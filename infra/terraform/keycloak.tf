@@ -61,7 +61,7 @@ resource "aws_ecs_task_definition" "keycloak" {
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC = "true"
     } : { name = name, value = value }]
     secrets = concat(
-      [{ name = "KC_DB_PASSWORD", valueFrom = aws_ssm_parameter.db_password.arn }],
+      [{ name = "KC_DB_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" }],
       [for key, variable in local.keycloak_parameters : { name = variable, valueFrom = aws_ssm_parameter.keycloak[key].arn }]
     )
     # The Keycloak image ships without curl or wget; bash reads the management endpoint directly.
