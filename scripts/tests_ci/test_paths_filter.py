@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICES = {'catalog-pricing-service', 'order-service', 'inventory-service', 'notification-service'}
+CHECKS = {'terraform', 'workflows', 'stack'}
 
 
 @unittest.skipUnless(os.environ.get('PATHS_FILTER_ACTION'), 'Set PATHS_FILTER_ACTION to the pinned action dist/index.js')
@@ -19,6 +20,12 @@ class ChangedServicesTest(unittest.TestCase):
             if line.startswith('changes<<'):
                 return set(json.loads(lines[index + 1]))
         self.fail('Action did not emit the changed-service matrix: ' + '\n'.join(lines))
+
+    def checks(self, files):
+        lines = self.run_filter(files, '.github/check-filters.yaml')
+        # Every output is written as a "name<<delimiter" block; the next line holds the value.
+        return {line.split('<<')[0] for index, line in enumerate(lines)
+                if '<<' in line and line.split('<<')[0] in CHECKS and lines[index + 1] == 'true'}
 
     def run_filter(self, files, filters_file):
         filters = ROOT / filters_file
@@ -87,3 +94,24 @@ class ChangedServicesTest(unittest.TestCase):
     def test_two_service_changes_select_exactly_those_services(self):
         self.assertEqual(self.selected_services(['services/order-service/pom.xml',
                           'services/notification-service/Dockerfile']), {'order-service', 'notification-service'})
+
+    def test_terraform_change_selects_terraform_and_stack(self):
+        self.assertEqual(self.checks(['infra/terraform/rds.tf']), {'terraform', 'stack'})
+
+    def test_compose_change_selects_stack(self):
+        self.assertEqual(self.checks(['infra/docker-compose.yaml']), {'stack'})
+
+    def test_script_change_selects_stack(self):
+        self.assertEqual(self.checks(['scripts/smoke.sh']), {'stack'})
+
+    def test_deploy_workflow_change_selects_workflows(self):
+        self.assertEqual(self.checks(['.github/workflows/deploy.yml']), {'workflows'})
+
+    def test_ci_workflow_change_selects_every_check(self):
+        self.assertEqual(self.checks(['.github/workflows/ci.yml']), CHECKS)
+
+    def test_service_change_selects_stack(self):
+        self.assertEqual(self.checks(['services/order-service/pom.xml']), {'stack'})
+
+    def test_documentation_change_selects_no_check(self):
+        self.assertEqual(self.checks(['README.md']), set())

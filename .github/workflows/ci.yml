@@ -23,6 +23,9 @@ jobs:
       pull-requests: read
     outputs:
       services: ${{ steps.filter.outputs.changes }}
+      terraform: ${{ steps.checks.outputs.terraform }}
+      workflows: ${{ steps.checks.outputs.workflows }}
+      stack: ${{ steps.checks.outputs.stack }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +53,11 @@ jobs:
         with:
           base: ${{ github.ref }}
           filters: .github/filters.yaml
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: checks
+        with:
+          base: ${{ github.ref }}
+          filters: .github/check-filters.yaml
 
   service:
     name: Verify ${{ matrix.service }}
@@ -100,9 +108,86 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  terraform:
+    name: Verify Terraform
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - run: terraform test
+
+  actionlint:
+    name: Lint workflows
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run actionlint 1.7.12
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color=false
+
+  docker-images:
+    name: Verify container images
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts/tests_docker -v
+      - name: Upload image verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-verification
+          path: target/image-verification/
+          if-no-files-found: warn
+          retention-days: 7
+
+  compose-stack:
+    name: Verify the Compose stack
+    needs: changes
+    if: needs.changes.outputs.stack == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts/tests_compose -v
+      - name: Upload Compose verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compose-verification
+          path: target/compose-verification/
+          if-no-files-found: warn
+          retention-days: 7
+
   result:
     name: CI result
-    needs: [changes, service]
+    needs: [changes, service, terraform, actionlint, docker-images, compose-stack]
     if: always()
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
@@ -112,6 +197,13 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           SERVICES: ${{ needs.changes.outputs.services }}
           SERVICE_RESULT: ${{ needs.service.result }}
+          TERRAFORM: ${{ needs.changes.outputs.terraform }}
+          TERRAFORM_RESULT: ${{ needs.terraform.result }}
+          WORKFLOWS: ${{ needs.changes.outputs.workflows }}
+          ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
+          STACK: ${{ needs.changes.outputs.stack }}
+          DOCKER_IMAGES_RESULT: ${{ needs.docker-images.result }}
+          COMPOSE_STACK_RESULT: ${{ needs.compose-stack.result }}
         run: |
           test "$CHANGES_RESULT" = success
           if test "$SERVICES" = '[]'; then
@@ -119,3 +211,9 @@ jobs:
           else
             test "$SERVICE_RESULT" = success
           fi
+          # A selected check must pass; an unselected one must have been skipped, not failed or cancelled.
+          check() { if test "$1" = true; then test "$2" = success; else test "$2" = skipped; fi; }
+          check "$TERRAFORM" "$TERRAFORM_RESULT"
+          check "$WORKFLOWS" "$ACTIONLINT_RESULT"
+          check "$STACK" "$DOCKER_IMAGES_RESULT"
+          check "$STACK" "$COMPOSE_STACK_RESULT"

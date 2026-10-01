@@ -1,0 +1,14 @@
+terraform:
+  - 'infra/terraform/**'
+  - '.github/workflows/ci.yml'
+  - '.github/check-filters.yaml'
+workflows:
+  - '.github/workflows/**'
+  - '.github/check-filters.yaml'
+stack:
+  - 'services/**'
+  - 'infra/**'
+  - 'scripts/**'
+  - 'contracts/**'
+  - '.github/workflows/ci.yml'
+  - '.github/check-filters.yaml'

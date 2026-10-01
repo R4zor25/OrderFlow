@@ -13,9 +13,22 @@ target. A running Docker daemon is needed for the real Testcontainers tests.
 |---|---|
 | `services/<service>/**` | That service |
 | Multiple service directories | Those services |
-| `contracts/**`, `infra/**`, `scripts/**`, `.github/**` | All four |
+| `contracts/**`, `.github/workflows/ci.yml`, `.github/filters.yaml` | All four |
 | Root `pom.xml`, Maven wrappers or `.mvn/**` | All four |
+| `infra/**`, `scripts/**`, `.github/workflows/deploy.yml` | None (see the check jobs below) |
 | Only README or documentation | None |
+
+`.github/check-filters.yaml` selects the other checks:
+
+| Check job | Selected by |
+|---|---|
+| `terraform`: `fmt -check`, `init -backend=false`, `validate`, `test` (Terraform 1.16.5) | `infra/terraform/**`, the CI workflow or its filters |
+| `actionlint` (1.7.12, image pinned by digest) | `.github/workflows/**` or the check filters |
+| `docker-images` (`scripts/tests_docker`) and `compose-stack` (`scripts/tests_compose`) | `services/**`, `infra/**`, `scripts/**`, `contracts/**`, the CI workflow or its filters |
+
+The two Docker suites run in parallel on the ARM runner and upload their evidence
+(`target/image-verification/`, `target/compose-verification/` including `memory.json`)
+for seven days.
 
 The detector still runs for documentation changes. It tests the filter configuration
 against real Git diffs using the same pinned dorny action, runs the fast script-helper
@@ -47,15 +60,15 @@ quality or correctness.
 Artifacts are named `reports-<service>` and retained for seven days. If compilation
 fails before any report exists, the upload warns about missing files; the failed
 build remains failed. Matrix jobs use `fail-fast: false` so another service's
-failure does not cancel their diagnostic results. Newer runs for the same PR/ref
-cancel older workflow runs.
+failure does not cancel their diagnostic results. A newer push to the same pull
+request cancels its older run; pushes to `main` never cancel each other, because a
+later documentation-only push would otherwise leave an earlier service change untested.
 
 ## Required status and permissions
 
-`CI result` is the stable final check. It succeeds only when detection/tests succeed
-and either all selected service jobs succeed, or an empty selection correctly
-skips service jobs. Failure/cancellation/skipping of selected service jobs fails
-this check. Configure it as the required status after the workflow has run on
+`CI result` is the stable final check. It succeeds only when detection/tests succeed,
+every selected service and check job succeeds, and every unselected job was skipped.
+Failure, cancellation or skipping of a selected job fails this check. Configure it as the required status after the workflow has run on
 GitHub. Do not require each dynamic matrix job individually.
 
 The workflow uses read-only repository permissions, with pull-request read access
