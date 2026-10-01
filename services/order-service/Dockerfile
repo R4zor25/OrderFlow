@@ -16,6 +16,9 @@ COPY --from=build /build/extracted/dependencies/ ./
 COPY --from=build /build/extracted/spring-boot-loader/ ./
 COPY --from=build /build/extracted/snapshot-dependencies/ ./
 COPY --from=build /build/extracted/application/ ./
+# AWS JDBC URLs verify the RDS certificate against this bundle (sslmode=verify-full); it goes into an existing
+# directory because ADD would create a missing parent with the file mode (644), which the runtime user cannot enter.
+ADD --checksum=sha256:fe45bbebf92ad3e27a583bbb2ddd1553c521ed4d49af5514dc0a40372ea5395c --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /application/rds-global-bundle.pem
 USER 10001:10001
 EXPOSE 8082
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=45", "-XX:+ExitOnOutOfMemoryError", "-XX:MaxMetaspaceSize=224m", "-jar", "application.jar"]

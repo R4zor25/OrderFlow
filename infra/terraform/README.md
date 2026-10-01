@@ -90,9 +90,11 @@ Its AWS configuration enables the consumer and Kafka readiness, uses LOG deliver
 and disables JavaMail. No email is sent on this deployment channel.
 
 Flyway creates `catalog`, `orders`, `inventory`, `notifications` in database
-`orderflow`. URLs include `currentSchema` and `sslmode=require`: PostgreSQL TLS is
-requested, but full hostname/CA verification is not configured. The shared demo
-user is not production isolation.
+`orderflow`. URLs include `currentSchema` and `sslmode=verify-full` with
+`sslrootcert` pointing at the AWS RDS CA bundle built into each image
+(`/application/rds-global-bundle.pem`, Keycloak `/opt/keycloak/conf/rds-global-bundle.pem`),
+so the certificate and the hostname are verified. The shared demo user is not
+production isolation.
 
 The execution role pulls ECR images, writes existing log streams and reads only
 the four Keycloak SSM parameters via `ssm:GetParameters` and the RDS-managed database

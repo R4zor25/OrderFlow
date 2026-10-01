@@ -5,6 +5,7 @@ import http.client
 import json
 import shutil
 import subprocess
+import tempfile
 import time
 import unittest
 import urllib.error
@@ -125,6 +126,12 @@ class KeycloakImageTest(unittest.TestCase):
     def test_service_client_gets_pricing_scope(self):
         token = self.token(grant_type='client_credentials', client_id='order-service', client_secret='secret-test')
         self.assertIn('pricing.quote', token['scope'].split())
+
+    def test_image_contains_the_rds_ca_bundle(self):
+        with tempfile.TemporaryDirectory(prefix='orderflow-keycloak-ca-') as directory:
+            target = Path(directory) / 'bundle.pem'
+            docker('cp', self.keycloak + ':/opt/keycloak/conf/rds-global-bundle.pem', str(target))
+            self.assertIn('BEGIN CERTIFICATE', target.read_text())
 
     def test_admin_console_route_responds(self):
         connection = http.client.HTTPConnection('127.0.0.1', int(self.http_port), timeout=10)

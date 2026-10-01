@@ -13,6 +13,7 @@ from benchmark_services import ROOT, command, wait_healthy, cleanup_resources, h
 
 
 METASPACE_MIB = 224
+RDS_CA_BUNDLE = '/application/rds-global-bundle.pem'
 JVM_FLAGS = ('-XX:MaxRAMPercentage=45', '-XX:+ExitOnOutOfMemoryError', f'-XX:MaxMetaspaceSize={METASPACE_MIB}m')
 
 
@@ -86,6 +87,8 @@ class ServiceImageTest(unittest.TestCase):
             self.assertTrue(proc.startswith('java '), proc)
             for flag in JVM_FLAGS:
                 self.assertIn(flag, proc)
+            bundle = command('docker', 'exec', name, 'grep', '-c', 'BEGIN CERTIFICATE', RDS_CA_BUNDLE)
+            self.assertGreater(int(bundle), 0)
             no_build_tools = subprocess.run(['docker', 'exec', '--user', '0', name, 'sh', '-c',
                 'command -v javac || command -v mvn || test -e /application/mvnw || test -d /application/src || test -d /root/.m2'],
                 capture_output=True, text=True)

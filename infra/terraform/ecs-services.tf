@@ -12,7 +12,7 @@ locals {
       priority       = 10
       paths          = ["/api/v1/products", "/api/v1/products/*"]
       environment = {
-        CATALOG_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=catalog&sslmode=require"
+        CATALOG_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=catalog&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
         CATALOG_DB_USERNAME     = aws_db_instance.main.username
         SPRING_PROFILES_ACTIVE  = "aws"
         CATALOG_REDIS_HOST      = "redis"
@@ -32,7 +32,7 @@ locals {
       priority       = 20
       paths          = ["/api/v1/orders", "/api/v1/orders/*"]
       environment = {
-        ORDER_DB_URL             = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=orders&sslmode=require"
+        ORDER_DB_URL             = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=orders&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
         ORDER_DB_USERNAME        = aws_db_instance.main.username
         SPRING_PROFILES_ACTIVE   = "aws"
         ORDER_REDIS_HOST         = "redis"
@@ -56,7 +56,7 @@ locals {
       priority       = 30
       paths          = ["/api/v1/stock", "/api/v1/stock/*", "/api/v1/reservations"]
       environment = {
-        INVENTORY_DB_URL               = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=inventory&sslmode=require"
+        INVENTORY_DB_URL               = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=inventory&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
         INVENTORY_DB_USERNAME          = aws_db_instance.main.username
         SPRING_PROFILES_ACTIVE         = "aws"
         KAFKA_BOOTSTRAP                = "kafka:9092"
@@ -77,7 +77,7 @@ locals {
       priority       = 40
       paths          = ["/api/v1/notifications"]
       environment = {
-        NOTIFICATION_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=notifications&sslmode=require"
+        NOTIFICATION_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=notifications&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
         NOTIFICATION_DB_USERNAME     = aws_db_instance.main.username
         MICRONAUT_ENVIRONMENTS       = "aws"
         KAFKA_BOOTSTRAP              = "kafka:9092"

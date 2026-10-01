@@ -61,6 +61,12 @@ run "bootstrap_runtime" {
     error_message = "Proxy ingress and client aliases must use distinct correct ports."
   }
   assert {
+    condition = alltrue([for name, t in aws_ecs_task_definition.application :
+      anytrue([for e in jsondecode(t.container_definitions)[0].environment :
+    endswith(e.name, "_DB_URL") && strcontains(e.value, "sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem")])])
+    error_message = "Application JDBC URLs must verify the RDS certificate and hostname."
+  }
+  assert {
     condition     = (alltrue([for name, t in aws_ecs_task_definition.application : length(jsondecode(t.container_definitions)[0].secrets) == (name == "order-service" ? 2 : 1) && jsondecode(t.container_definitions)[0].secrets[0].valueFrom == "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" && jsondecode(t.container_definitions)[0].secrets[0].name == "${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_PASSWORD" && alltrue([for e in jsondecode(t.container_definitions)[0].environment : !endswith(e.name, "PASSWORD")])]))
     error_message = "Database passwords must only be injected from the RDS-managed secret."
   }
@@ -102,7 +108,7 @@ run "bootstrap_runtime" {
   }
   assert {
     condition = (alltrue([for name, t in aws_ecs_task_definition.application :
-      { for e in jsondecode(t.container_definitions)[0].environment : e.name => e.value }["${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_URL"] == "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=${lookup({ catalog-pricing-service = "catalog", order-service = "orders", inventory-service = "inventory", notification-service = "notifications" }, name)}&sslmode=require" &&
+      { for e in jsondecode(t.container_definitions)[0].environment : e.name => e.value }["${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_URL"] == "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=${lookup({ catalog-pricing-service = "catalog", order-service = "orders", inventory-service = "inventory", notification-service = "notifications" }, name)}&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem" &&
       { for e in jsondecode(t.container_definitions)[0].environment : e.name => e.value }["${lookup({ catalog-pricing-service = "CATALOG", order-service = "ORDER", inventory-service = "INVENTORY", notification-service = "NOTIFICATION" }, name)}_DB_USERNAME"] == aws_db_instance.main.username &&
       jsondecode(t.container_definitions)[0].portMappings[0].containerPort == lookup({ catalog-pricing-service = 8081, order-service = 8082, inventory-service = 8083, notification-service = 8084 }, name) &&
       jsondecode(t.container_definitions)[0].portMappings[0].appProtocol == "http"
@@ -193,7 +199,7 @@ run "bootstrap_runtime" {
       jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].memory == 1536 &&
       contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_HTTP_ENABLED=true") &&
       contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_HOSTNAME=http://${aws_lb.main.dns_name}") &&
-      contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_DB_URL=jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?sslmode=require") &&
+      contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : "${e.name}=${e.value}"], "KC_DB_URL=jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?sslmode=verify-full&sslrootcert=/opt/keycloak/conf/rds-global-bundle.pem") &&
       !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_DB_SCHEMA") &&
       !contains([for e in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].environment : e.name], "KC_PROXY_HEADERS") &&
       toset([for s in jsondecode(aws_ecs_task_definition.keycloak.container_definitions)[0].secrets : s.name]) ==
