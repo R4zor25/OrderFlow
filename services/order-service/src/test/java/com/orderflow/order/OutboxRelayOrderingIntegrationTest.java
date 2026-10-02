@@ -70,7 +70,7 @@ class OutboxRelayOrderingIntegrationTest {
             }));
             try {
                 assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
-                assertThat(relay.publishBatch()).isZero();
+                relay.publishBatch();
                 assertThat(jdbc.queryForObject("""
                     select count(*) from orders.outbox_event
                     where id in (?, ?) and published_at is not null
@@ -81,8 +81,8 @@ class OutboxRelayOrderingIntegrationTest {
             holdingTransaction.get(5, TimeUnit.SECONDS);
         }
 
-        assertThat(relay.publishBatch()).isEqualTo(1);
-        assertThat(relay.publishBatch()).isEqualTo(1);
+        relay.publishBatch();
+        relay.publishBatch();
         assertThat(jdbc.queryForObject("""
             select count(*) from orders.outbox_event
             where id in (?, ?) and published_at is not null

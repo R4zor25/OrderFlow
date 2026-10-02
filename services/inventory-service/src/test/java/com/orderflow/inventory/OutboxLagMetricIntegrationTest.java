@@ -38,6 +38,7 @@ class OutboxLagMetricIntegrationTest {
     @Test
     void reportsAgeOfOldestUnpublishedEventAndZeroWhenQueueIsEmpty() throws Exception {
         when(clock.instant()).thenReturn(NOW);
+        jdbc.update("delete from inventory.outbox_event");
         expectLag(0.0);
 
         insert(NOW.minusSeconds(90), null);

@@ -4,6 +4,10 @@
 It verifies source changes and builds images; it does not publish images or deploy.
 All jobs use GitHub-hosted `ubuntu-24.04-arm` runners, matching the ARM64 container
 target. A running Docker daemon is needed for the real Testcontainers tests.
+The Spring services' tests share one PostgreSQL container per test run and give every
+Spring context its own database, because cached contexts keep background jobs (outbox
+relay, retention, scans) running. Kafka and Redis stay per context for the same reason:
+cached listeners and cache keys would otherwise see other tests' data.
 
 ## Changed-service policy
 

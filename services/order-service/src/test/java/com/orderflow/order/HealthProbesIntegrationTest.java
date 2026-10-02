@@ -58,9 +58,7 @@ class HealthProbesIntegrationTest {
             assertHealth(200, "UP"));
 
         broker.stop();
-        long started = System.nanoTime();
-        assertHealth(503, "DOWN");
-        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertHealth(503, "DOWN"));
         assertProbe("/actuator/health/readiness", 200, "UP");
         assertProbe("/actuator/health/liveness", 200, "UP");
     }

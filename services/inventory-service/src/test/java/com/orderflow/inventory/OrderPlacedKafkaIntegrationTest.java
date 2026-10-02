@@ -33,6 +33,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -199,7 +200,7 @@ class OrderPlacedKafkaIntegrationTest {
                 select count(*) from inventory.reservation where order_id = ?
                 """, Integer.class, orderId)).isEqualTo(1);
         });
-        verify(processor, times(5)).process(any());
+        verify(processor, times(5)).process(argThat(event -> event.eventId().equals(eventId)));
     }
 
     @Test
@@ -219,7 +220,7 @@ class OrderPlacedKafkaIntegrationTest {
         assertThat(envelope.get("eventType").asString()).isEqualTo("StockReservationFailed");
         assertThat(envelope.get("payload").get("reason").asString()).isEqualTo("Invalid order");
         assertThat(envelope.get("payload").get("unavailableSkus").get(0).asString()).isEqualTo("CHAIR-005");
-        verify(processor, times(1)).process(any());
+        verify(processor, times(1)).process(argThat(event -> event.eventId().equals(eventId)));
         assertThat(jdbc.queryForObject("""
             select count(*) from inventory.reservation where order_id = ?
             """, Integer.class, orderId)).isZero();

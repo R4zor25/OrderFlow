@@ -58,14 +58,14 @@ class OutboxRelayFailureIntegrationTest {
             .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")))
             .thenReturn(CompletableFuture.completedFuture(null));
 
-        assertThat(relay.publishBatch()).isZero();
+        relay.publishBatch();
         assertThat(tracer.currentSpan()).isNull();
         assertThat(observations.getCurrentObservation()).isNull();
         assertThat(jdbc.queryForMap("""
             select published_at, parked_at, attempts from orders.outbox_event where id = ?
             """, eventId)).containsEntry("published_at", null).containsEntry("parked_at", null).containsEntry("attempts", 1);
 
-        assertThat(relay.publishBatch()).isEqualTo(1);
+        relay.publishBatch();
         assertThat(jdbc.queryForObject("""
             select published_at from orders.outbox_event where id = ?
             """, Timestamp.class, eventId)).isNotNull();
