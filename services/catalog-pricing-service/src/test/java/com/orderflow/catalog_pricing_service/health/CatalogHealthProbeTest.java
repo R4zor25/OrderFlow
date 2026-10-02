@@ -6,7 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
-import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
+import com.orderflow.catalog_pricing_service.IsolatedPostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -34,7 +34,7 @@ import static org.awaitility.Awaitility.await;
     "spring.datasource.hikari.validation-timeout=1000", "spring.data.redis.timeout=1s", "spring.data.redis.connect-timeout=1s"
 })
 @ActiveProfiles("local")
-@Import({PostgresTestConfiguration.class, RedisTestConfiguration.class})
+@Import({IsolatedPostgresTestConfiguration.class, RedisTestConfiguration.class})
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class CatalogHealthProbeTest {
