@@ -421,6 +421,18 @@ AWS runtime configuration:
 - Terraform generates the Keycloak bootstrap-admin password, the order-service client secret and the demo-user password into SSM SecureString parameters; the execution role reads exactly these and the database password. Keycloak runs one task at a time (0/100 deployment) because two tasks would race on schema creation at startup.
 - Native Terraform tests use a mock AWS provider and assert the configuration contracts without creating cloud resources. Actual regional availability, permissions and connectivity require a live plan/apply; OIDC trust and the manual publish/deploy/rollback workflow are implemented with local contract tests; hosted OIDC, ECR publication and ECS deployment still require live validation. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
+Demo security trade-offs (accepted for this temporary demo; production needs the fix in the last column):
+
+| Risk | In this demo | Production fix |
+|---|---|---|
+| Shared database user | One RDS master user for all four services and Keycloak, with DDL rights on every schema | One role per service limited to its own schema; Flyway migrations under a separate, privileged user |
+| Kafka and Redis without authentication | PLAINTEXT inside the shared task security group; any task can publish to any topic or read any Redis key | SASL/SCRAM or mTLS with per-topic ACLs; Redis AUTH/ACLs and TLS |
+| Personal data in events and DLTs | `customerEmail` travels in the event payload and therefore in the DLTs (7-day retention) | Events carry only identifiers and the notification service looks the address up, or the payload is encrypted; restricted DLT access |
+| Secrets in the Terraform state | The database password is no longer there (Secrets Manager); the generated Keycloak secrets are, in a local, Git-excluded state | S3 backend with KMS encryption and locking; every generated secret in Secrets Manager |
+| Database password rotation | RDS rotates its managed secret every seven days; running services need a redeploy to open new connections | Re-read the secret on authentication failure, or use IAM database authentication |
+
+The database connections themselves are verified: AWS JDBC URLs use `sslmode=verify-full` with the RDS CA bundle.
+
 ## 7. Repository layout
 
 ```
