@@ -78,6 +78,8 @@ The helper checks account, region, family, ACTIVE status, project roles/containe
 
 The five-image ECR retention policy may delete a rollback image; select a revision whose image still exists. Rollback restores code and runtime configuration, **not** database migrations or business events. A rollback that undoes configuration lasts only until the next release, which renders from the newest family revision again; to make it permanent, fix the Terraform configuration (or deregister the newer revisions) before the next release. Use compatible Flyway schema changes. Roll back each affected application explicitly if a release was partial.
 
+Revisions created before the database password moved to the RDS-managed Secrets Manager secret reference a removed SSM parameter and images without the RDS CA bundle; a rollback cannot cross that change.
+
 ## Local evidence and pending cloud validation
 
 The local step checks Terraform mock assertions/graph, Python CLI/workflow contracts, actionlint, existing CI/script tests, and all four full Maven coverage builds. Mock responses do not prove live IAM/API authorization.

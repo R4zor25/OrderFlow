@@ -100,8 +100,15 @@ The execution role pulls ECR images, writes existing log streams and reads only
 the four Keycloak SSM parameters via `ssm:GetParameters` and the RDS-managed database
 secret via `secretsmanager:GetSecretValue`. ECS injects them with the container `secrets`
 field; the database password is the secret's `password` key. RDS rotates that secret
-every seven days by default: running tasks keep their open connections but cannot open
-new ones with the old password, so redeploy (force a new deployment) after a rotation. The separate task role has no attached permissions;
+every seven days by default and ECS does not refresh it in running tasks: within about
+30 minutes (Hikari's connection lifetime) every database call fails, while liveness and
+the ALB health checks stay green. Force a new deployment after each rotation.
+After applying this configuration to a stack that still used the generated SSM
+password, dispatch a release immediately: the running revisions reference the removed
+parameter. The images pin the AWS RDS CA bundle by SHA-256; when AWS publishes a new
+`global-bundle.pem`, image builds fail until the checksum in all five Dockerfiles
+(four services and `infra/keycloak`) is recomputed and updated together. Builds need
+access to `truststore.pki.rds.amazonaws.com`. The separate task role has no attached permissions;
 application code makes no AWS API calls. No GitHub deploy role exists yet.
 
 Kafka (`apache/kafka:4.3.1`) is one combined KRaft node, replication factor one,
