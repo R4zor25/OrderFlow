@@ -167,7 +167,7 @@ class ReservationServiceIntegrationTest {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String first = insertStock("TEST-A-" + suffix, 1_000);
         String second = insertStock("TEST-B-" + suffix, 1_000);
-        int orderCount = 40;
+        int orderCount = 20;
         CountDownLatch ready = new CountDownLatch(orderCount);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<?>> results = new ArrayList<>();

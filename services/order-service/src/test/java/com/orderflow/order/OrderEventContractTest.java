@@ -53,20 +53,23 @@ class OrderEventContractTest {
 
     @Test
     void placedEventMatchesItsContract() throws IOException {
-        UUID id = createOrder();
-        transactions.executeWithoutResult(status -> outbox.placed(load(id), CREATED));
+        UUID id = transactions.execute(status -> {
+            Order order = place();
+            outbox.placed(order, CREATED);
+            return order.getId();
+        });
 
         assertMatchesSample(produced(id, "OrderPlaced"), "order-placed.json");
     }
 
     @Test
     void confirmedEventMatchesItsContract() throws IOException {
-        UUID id = createOrder();
-        transactions.executeWithoutResult(status -> {
-            Order order = load(id);
+        UUID id = transactions.execute(status -> {
+            Order order = place();
             order.confirm(CHANGED);
             orders.flush();
             outbox.confirmed(order, CHANGED);
+            return order.getId();
         });
 
         assertMatchesSample(produced(id, "OrderConfirmed"), "order-confirmed.json");
@@ -74,12 +77,12 @@ class OrderEventContractTest {
 
     @Test
     void rejectedEventMatchesItsContract() throws IOException {
-        UUID id = createOrder();
-        transactions.executeWithoutResult(status -> {
-            Order order = load(id);
+        UUID id = transactions.execute(status -> {
+            Order order = place();
             order.reject("Insufficient stock", CHANGED);
             orders.flush();
             outbox.rejected(order, CHANGED);
+            return order.getId();
         });
 
         assertMatchesSample(produced(id, "OrderRejected"), "order-rejected.json");
@@ -87,31 +90,27 @@ class OrderEventContractTest {
 
     @Test
     void cancelledEventMatchesItsContract() throws IOException {
-        UUID id = createOrder();
-        transactions.executeWithoutResult(status -> {
-            Order order = load(id);
+        UUID id = transactions.execute(status -> {
+            Order order = place();
             OrderStatus previous = order.getStatus();
             order.cancel(CHANGED);
             orders.flush();
             outbox.cancelled(order, previous, CHANGED);
+            return order.getId();
         });
 
         assertMatchesSample(produced(id, "OrderCancelled"), "order-cancelled.json");
     }
 
-    private UUID createOrder() {
-        return transactions.execute(status -> {
-            Customer customer = customers.findById(UUID.fromString("33333333-3333-4333-8333-333333333333"))
-                .orElseThrow();
-            Order order = Order.place(customer, List.of(
-                new Order.PricedLine("CHAIR-001", 2, new BigDecimal("84.90"))),
-                new BigDecimal("22.92"), CREATED);
-            return orders.saveAndFlush(order).getId();
-        });
-    }
-
-    private Order load(UUID id) {
-        return orders.findAllWithCustomerAndLines(List.of(id)).getFirst();
+    // Placing and changing the order in one transaction keeps the pending-timeout sweep, which runs in this
+    // shared context, from cancelling the already expired order in between.
+    private Order place() {
+        Customer customer = customers.findById(UUID.fromString("33333333-3333-4333-8333-333333333333"))
+            .orElseThrow();
+        Order order = Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 2, new BigDecimal("84.90"))),
+            new BigDecimal("22.92"), CREATED);
+        return orders.saveAndFlush(order);
     }
 
     private JsonNode produced(UUID id, String eventType) {
