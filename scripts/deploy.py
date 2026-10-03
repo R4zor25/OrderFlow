@@ -178,10 +178,14 @@ def render_task(task, service, image_uri, target):
     return rendered
 
 
-def assert_stable(service, expected_arn):
-    deployments = service.get("deployments", [])
+def require_enabled(service):
     if service.get("desiredCount", 0) <= 0:
         raise DeployError("Runtime is disabled: publish images, then activate Terraform with runtime_enabled=true and the same SHA.")
+
+
+def assert_stable(service, expected_arn):
+    require_enabled(service)
+    deployments = service.get("deployments", [])
     if (service.get("taskDefinition") != expected_arn or len(deployments) != 1
             or deployments[0].get("status") != "PRIMARY"
             or deployments[0].get("taskDefinition") != expected_arn
@@ -310,7 +314,8 @@ def rollback_one(target, service, arn, runner, summary_path):
     try:
         validate_target(target, runner)
         state = describe_service(target, service, runner)
-        assert_stable(state, state.get("taskDefinition", ""))
+        # Rolling back is the remedy for a failing deployment, so only a disabled runtime stops it.
+        require_enabled(state)
         task = describe_task(target, service, arn, runner)
         image = validate_task(task, service, target)["image"]
         repo = target.repository(service)

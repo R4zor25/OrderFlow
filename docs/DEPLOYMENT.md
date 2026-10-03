@@ -74,7 +74,7 @@ Dispatch from main, operation **rollback**, select one application and supply th
 arn:aws:ecs:eu-central-1:123456789012:task-definition/orderflow-order-service:7
 ```
 
-The helper checks account, region, family, ACTIVE status, project roles/container/runtime and the image's ECR presence/ARM64 configuration before updating. A currently unstable service is rejected. Rollback reuses the existing task revision: no Maven/image build or task registration. Success requires that exact revision to become stable.
+The helper checks account, region, family, ACTIVE status, project roles/container/runtime and the image's ECR presence/ARM64 configuration before updating. Unlike a deploy, a rollback also runs on a currently unstable service, because replacing a failing deployment is its purpose; only a disabled runtime (desired count 0) is rejected. Rollback reuses the existing task revision: no Maven/image build or task registration. Success requires that exact revision to become stable.
 
 The five-image ECR retention policy may delete a rollback image; select a revision whose image still exists. Rollback restores code and runtime configuration, **not** database migrations or business events. A rollback that undoes configuration lasts only until the next release, which renders from the newest family revision again; to make it permanent, fix the Terraform configuration (or deregister the newer revisions) before the next release. Use compatible Flyway schema changes. Roll back each affected application explicitly if a release was partial.
 

@@ -52,6 +52,7 @@ class FakeRunner:
         self.index = None
         self.zero_service = None
         self.unstable_service = None
+        self.stabilise_after_update = False
         self.fail_update = None
         self.old_after_wait = False
         self.wait_error = None
@@ -103,6 +104,7 @@ class FakeRunner:
         if action == 'update-service':
             s = args[args.index('--service')+1].removeprefix('orderflow-')
             if s == self.fail_update: raise d.CommandError('InvalidParameterException')
+            if self.stabilise_after_update and s == self.unstable_service: self.unstable_service = None
             if self.move_latest_after_update:
                 moved = self.move_latest_after_update
                 self.latest_revision[moved] += 1
@@ -285,6 +287,18 @@ class HelperBehaviorTests(unittest.TestCase):
         registered=[json.loads(a[a.index('--cli-input-json')+1])['family'] for a in self.runner.mutations()
                     if a[2]=='register-task-definition']
         self.assertNotIn('orderflow-notification-service',registered)
+
+    def test_rollback_replaces_an_unstable_service(self):
+        self.runner.unstable_service='order-service'
+        self.runner.stabilise_after_update=True
+        d.rollback_one(TARGET,'order-service',TARGET.task_prefix('order-service')+'7',self.runner,self.summary)
+        self.assertEqual([a[2] for a in self.runner.mutations()],['update-service'])
+
+    def test_rollback_refuses_a_disabled_runtime(self):
+        self.runner.zero_service='order-service'
+        with self.assertRaisesRegex(d.DeployError,'activate Terraform'):
+            d.rollback_one(TARGET,'order-service',TARGET.task_prefix('order-service')+'7',self.runner,self.summary)
+        self.assertEqual(self.runner.mutations(),[])
 
     def test_valid_rollback_does_not_register_or_change_counts(self):
         d.rollback_one(TARGET,'order-service',TARGET.task_prefix('order-service')+'7',self.runner,self.summary)
