@@ -162,6 +162,42 @@ class ReservationServiceIntegrationTest {
         )).isEqualTo(10);
     }
 
+    @Test
+    void reservesOrdersThatListTheSameSkusInOppositeOrder() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String first = insertStock("TEST-A-" + suffix, 1_000);
+        String second = insertStock("TEST-B-" + suffix, 1_000);
+        int orderCount = 40;
+        CountDownLatch ready = new CountDownLatch(orderCount);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> results = new ArrayList<>();
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int index = 0; index < orderCount; index++) {
+                var lines = index % 2 == 0
+                    ? List.of(new ReservationLine(first, 1), new ReservationLine(second, 1))
+                    : List.of(new ReservationLine(second, 1), new ReservationLine(first, 1));
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    reservationService.reserve(UUID.randomUUID(), lines);
+                    return null;
+                }));
+            }
+            try {
+                assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            } finally {
+                start.countDown();
+            }
+            for (Future<?> result : results) {
+                result.get(30, TimeUnit.SECONDS);
+            }
+        }
+
+        assertThat(stockValue(first, "reserved")).isEqualTo(orderCount);
+        assertThat(stockValue(second, "reserved")).isEqualTo(orderCount);
+    }
+
     private String insertStock(int onHand) {
         return insertStock("TEST-" + UUID.randomUUID().toString().substring(0, 8), onHand);
     }

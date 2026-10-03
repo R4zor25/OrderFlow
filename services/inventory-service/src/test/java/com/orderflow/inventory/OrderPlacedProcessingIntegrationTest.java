@@ -149,6 +149,27 @@ class OrderPlacedProcessingIntegrationTest {
     }
 
     @Test
+    void ignoresOrderPlacedReplayedAfterTheOrderWasCancelled() {
+        String sku = insertStock(5);
+        UUID orderId = UUID.randomUUID();
+        UUID cancelEventId = UUID.randomUUID();
+        testEventIds.add(cancelEventId);
+        var placed = orderPlaced(UUID.randomUUID(), orderId, new OrderPlacedPayload.Line(sku, 2));
+
+        processor.process(placed);
+        cancellation.release(cancelEventId, orderId);
+        processor.process(placed);
+
+        assertThat(stockValue(sku, "reserved")).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.reservation where order_id = ? and status = 'RESERVED'
+            """, Integer.class, orderId)).isZero();
+        assertThat(jdbc.queryForObject("""
+            select count(*) from inventory.outbox_event where aggregate_id = ? and event_type = 'StockReserved'
+            """, Integer.class, orderId.toString())).isEqualTo(1);
+    }
+
+    @Test
     void rejectsInvalidOrderOnceAndCountsIt() {
         UUID orderId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
