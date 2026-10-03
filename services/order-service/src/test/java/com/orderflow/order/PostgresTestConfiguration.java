@@ -12,8 +12,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @TestConfiguration(proxyBeanMethods = false)
 public class PostgresTestConfiguration {
 
-    // One container per test run; every Spring context gets its own database, because cached contexts keep their
-    // background jobs (outbox relay, retention, scans) running and must not see another test's rows.
+    // One container per test run; every Spring context gets its own database, because cached contexts resume later
+    // and their jobs (outbox relay, retention, scans) must not act on rows another test class left behind.
     private static final PostgreSQLContainer CONTAINER = start();
 
     @Bean
@@ -45,7 +45,7 @@ public class PostgresTestConfiguration {
     }
 
     private static PostgreSQLContainer start() {
-        // Each cached context keeps a full Hikari pool (10) open; the context cache holds up to 32 of them.
+        // Each cached context keeps its full Hikari pool (10) open, even while paused; the cache holds up to 32.
         var container = new PostgreSQLContainer("postgres:17.11-bookworm")
             .withCommand("postgres", "-c", "max_connections=500");
         container.start();
