@@ -69,7 +69,7 @@ variable "github_repository_id" {
 }
 
 variable "create_github_oidc_provider" {
-  description = "Create the account's GitHub OIDC provider; set false when it already exists, so this stack trusts it without owning (and destroying) it."
+  description = "Create the account's GitHub OIDC provider; set false when it already exists, so this stack trusts it without owning (and destroying) it. Remove a provider this state already manages from the state before switching to false."
   type        = bool
   default     = true
   nullable    = false

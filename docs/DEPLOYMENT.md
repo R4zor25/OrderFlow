@@ -12,13 +12,15 @@ The manual `Application release` workflow publishes five ARM64 images (four appl
 
 Keep personal input values in an excluded `.tfvars` file; the Terraform README commands use `infra/terraform/orderflow.tfvars` (`*.tfvars` is ignored by Git). The deploy role has exact application ECR/ECS scopes and PassRole for the project's two runtime roles. Only the two AWS jobs (image publishing and release) request an OIDC token; verification jobs have no AWS session. [ECS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html) explains the task-definition resource scopes and the unscoped DescribeTaskDefinition action.
 
-The GitHub OIDC provider is account-wide. If this account already has one (for example created by another repository's stack), set `create_github_oidc_provider = false` in the `.tfvars` file: the stack then reads the existing provider and trusts it without managing it, so a teardown here cannot remove the OIDC trust other repositories rely on. With the default `true`, this stack creates and owns the provider.
+The GitHub OIDC provider is account-wide. If this account already has one (for example created by another repository's stack), set `create_github_oidc_provider = false` in the `.tfvars` file: the stack then reads the existing provider (it must already exist, otherwise the plan fails) and trusts it without managing it, so a teardown here cannot remove the OIDC trust other repositories rely on. With the default `true`, this stack creates and owns the provider.
 
-If you imported an existing provider by following an earlier version of this guide, release it from this state before switching to `false`:
+If this state already manages the provider, whether this stack created it or it was imported by following an earlier version of this guide, remove it from the state before switching to `false`. Otherwise the next apply destroys the account-wide provider. The unindexed address works both before and after Terraform has applied the provider's move to an indexed address:
 
 ```bash
-terraform state rm 'aws_iam_openid_connect_provider.github[0]'
+terraform state rm aws_iam_openid_connect_provider.github
 ```
+
+Then check that `terraform plan` shows no destroy of the provider.
 
 Set repository **Actions variables**:
 
@@ -56,7 +58,7 @@ Keep `runtime_enabled=true` in subsequent Terraform inputs while the runtime sho
 
 Dispatch from **main**, operation **deploy**. The source is that dispatch's `github.sha`; there is no arbitrary source-ref input.
 
-All four Maven builds and container tests must pass. A separate publishing job then builds the five absent images in parallel, one matrix job per image with its own 30-minute timeout and credential. The release job only checks images and updates services: four services one after another, each waiting at most about 10 minutes (`aws ecs wait services-stable`) for stability, within its 60-minute timeout and one-hour credential. Every image must exist in ECR with an inspected Linux ARM64 configuration before the helper registers or updates any ECS service. Images use immutable full SHA tags; task definitions select the corresponding digest. Authentication, network and repository errors are failures, not a reason to rebuild an image as if it were missing.
+All four Maven builds and container tests must pass. A separate publishing job then builds whichever of the five images are absent, in parallel, one matrix job per image with its own 30-minute timeout and credential. The release job only checks images and updates services: four services one after another, each waiting at most about 10 minutes (`aws ecs wait services-stable`) for stability, within its 60-minute timeout and one-hour credential. Every image must exist in ECR with an inspected Linux ARM64 configuration before the helper registers or updates any ECS service. Images use immutable full SHA tags; task definitions select the corresponding digest. Authentication, network and repository errors are failures, not a reason to rebuild an image as if it were missing.
 
 Preflight requires all four application services to be active, nonzero and stable. The running revision only has to be stable; it may already be INACTIVE. A running deployment or disabled runtime rejects the operation before the first mutation. Deployment order is catalog → inventory → order → notification. Secrets, environment, ports, roles and resources are taken from the newest family revision; only the main application image changes. New task revisions have Project and ManagedBy tags.
 
@@ -74,7 +76,7 @@ Dispatch from main, operation **rollback**, select one application and supply th
 arn:aws:ecs:eu-central-1:123456789012:task-definition/orderflow-order-service:7
 ```
 
-The helper checks account, region, family, ACTIVE status, project roles/container/runtime and the image's ECR presence/ARM64 configuration before updating. Unlike a deploy, a rollback also runs on a currently unstable service, because replacing a failing deployment is its purpose; only a disabled runtime (desired count 0) is rejected. Rollback reuses the existing task revision: no Maven/image build or task registration. Success requires that exact revision to become stable.
+The helper checks account, region, family, ACTIVE status, project roles/container/runtime and the image's ECR presence/ARM64 configuration before updating. Unlike a deploy, a rollback also runs on a currently unstable service, because replacing a failing deployment is its purpose; stability is not required, but the service must still exist and be active, and a disabled runtime (desired count 0) is still rejected. Rollback reuses the existing task revision: no Maven/image build or task registration. Success requires that exact revision to become stable.
 
 The five-image ECR retention policy may delete a rollback image; select a revision whose image still exists. Rollback restores code and runtime configuration, **not** database migrations or business events. A rollback that undoes configuration lasts only until the next release, which renders from the newest family revision again; to make it permanent, fix the Terraform configuration (or deregister the newer revisions) before the next release. Use compatible Flyway schema changes. Roll back each affected application explicitly if a release was partial.
 
