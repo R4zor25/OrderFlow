@@ -68,6 +68,13 @@ variable "github_repository_id" {
   }
 }
 
+variable "create_github_oidc_provider" {
+  description = "Create the account's GitHub OIDC provider; set false when it already exists, so this stack trusts it without owning (and destroying) it."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "allowed_ingress_cidrs" {
   description = "IPv4 CIDR blocks allowed to reach the public ALB on port 80, typically the operator's public address as /32."
   type        = list(string)

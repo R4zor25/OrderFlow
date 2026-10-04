@@ -12,13 +12,13 @@ The manual `Application release` workflow publishes five ARM64 images (four appl
 
 Keep personal input values in an excluded `.tfvars` file; the Terraform README commands use `infra/terraform/orderflow.tfvars` (`*.tfvars` is ignored by Git). The deploy role has exact application ECR/ECS scopes and PassRole for the project's two runtime roles. Only the two AWS jobs (image publishing and release) request an OIDC token; verification jobs have no AWS session. [ECS authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html) explains the task-definition resource scopes and the unscoped DescribeTaskDefinition action.
 
-If this account already has a GitHub OIDC provider, import it instead of trying to create another provider for the same URL. From `infra/terraform`, replacing the example account with the actual account:
+The GitHub OIDC provider is account-wide. If this account already has one (for example created by another repository's stack), set `create_github_oidc_provider = false` in the `.tfvars` file: the stack then reads the existing provider and trusts it without managing it, so a teardown here cannot remove the OIDC trust other repositories rely on. With the default `true`, this stack creates and owns the provider.
+
+If you imported an existing provider by following an earlier version of this guide, release it from this state before switching to `false`:
 
 ```bash
-terraform import aws_iam_openid_connect_provider.github arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com
+terraform state rm 'aws_iam_openid_connect_provider.github[0]'
 ```
-
-Provide the required input variables for import as for plan/apply. Check other state ownership before importing an existing shared provider; one resource must have one state owner.
 
 Set repository **Actions variables**:
 

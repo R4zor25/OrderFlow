@@ -101,3 +101,26 @@ run "reject_invalid_repository_id" {
   variables { github_repository_id = "abc" }
   expect_failures = [var.github_repository_id]
 }
+
+run "creates_the_provider_by_default" {
+  command = apply
+  assert {
+    condition     = length(aws_iam_openid_connect_provider.github) == 1 && jsondecode(aws_iam_role.github_deploy.assume_role_policy).Statement[0].Principal.Federated == aws_iam_openid_connect_provider.github[0].arn
+    error_message = "By default the stack owns the GitHub OIDC provider and trusts it."
+  }
+}
+
+run "reuses_an_existing_provider_without_owning_it" {
+  command = apply
+  variables {
+    create_github_oidc_provider = false
+  }
+  override_data {
+    target = data.aws_iam_openid_connect_provider.github[0]
+    values = { arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com" }
+  }
+  assert {
+    condition     = length(aws_iam_openid_connect_provider.github) == 0 && jsondecode(aws_iam_role.github_deploy.assume_role_policy).Statement[0].Principal.Federated == "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    error_message = "An existing provider must be trusted without being managed (and destroyed) by this stack."
+  }
+}
