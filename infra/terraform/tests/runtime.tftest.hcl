@@ -161,6 +161,13 @@ run "bootstrap_runtime" {
     error_message = "The Kafka task must create every business and DLT topic after the broker is healthy."
   }
   assert {
+    condition = (jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].name == "kafka-topics" &&
+      join(" ", jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].entryPoint) == "sh -c" &&
+      strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--bootstrap-server localhost:9092") &&
+    strcontains(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[1].command[0], "--replication-factor 1"))
+    error_message = "The Kafka topic init must run its command through sh against the task-local broker with replication factor 1."
+  }
+  assert {
     condition = (alltrue([for name, rule in aws_lb_listener_rule.application :
       rule.priority == lookup({ catalog-pricing-service = 10, order-service = 20, inventory-service = 30, notification-service = 40 }, name) &&
       rule.action[0].target_group_arn == aws_lb_target_group.application[name].arn &&
