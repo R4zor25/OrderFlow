@@ -92,13 +92,67 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-  release:
+  publish:
     needs: [validate, verify]
+    if: >-
+      github.ref == 'refs/heads/main' && inputs.operation != 'rollback'
+    runs-on: ubuntu-24.04-arm
+    # Each image builds in its own job, so a slow build cannot eat the release job's time or credential.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: catalog-pricing-service, context: services/catalog-pricing-service }
+          - { name: inventory-service, context: services/inventory-service }
+          - { name: order-service, context: services/order-service }
+          - { name: notification-service, context: services/notification-service }
+          - { name: keycloak, context: infra/keycloak }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Assume short-lived publishing role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          unset-current-credentials: true
+          role-duration-seconds: 1800
+      - name: Log in to project registry
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - name: Check immutable image
+        id: image
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          IMAGE_NAME: ${{ matrix.name }}
+        run: python3 scripts/deploy.py image-status --service "$IMAGE_NAME" --sha "$RELEASE_SHA"
+      - name: Publish image when absent
+        if: steps.image.outputs.exists == 'false'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.image_uri }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  release:
+    needs: [validate, verify, publish]
     if: >-
       always() && github.ref == 'refs/heads/main' &&
       needs.validate.result == 'success' &&
-      (needs.verify.result == 'success' ||
-       (inputs.operation == 'rollback' && needs.verify.result == 'skipped'))
+      ((needs.verify.result == 'success' && needs.publish.result == 'success') ||
+       (inputs.operation == 'rollback' && needs.verify.result == 'skipped' &&
+        needs.publish.result == 'skipped'))
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     permissions:
@@ -121,86 +175,6 @@ jobs:
       - name: Log in to project registry
         run: |
           aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-      - name: Check immutable image for catalog-pricing-service
-        id: catalog-image
-        if: inputs.operation != 'rollback'
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: python3 scripts/deploy.py image-status --service catalog-pricing-service --sha "$RELEASE_SHA"
-      - name: Publish catalog-pricing-service when absent
-        if: inputs.operation != 'rollback' && steps.catalog-image.outputs.exists == 'false'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: services/catalog-pricing-service
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.catalog-image.outputs.image_uri }}
-          cache-from: type=gha,scope=catalog-pricing-service
-          cache-to: type=gha,mode=max,scope=catalog-pricing-service
-      - name: Check immutable image for inventory-service
-        id: inventory-image
-        if: inputs.operation != 'rollback'
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: python3 scripts/deploy.py image-status --service inventory-service --sha "$RELEASE_SHA"
-      - name: Publish inventory-service when absent
-        if: inputs.operation != 'rollback' && steps.inventory-image.outputs.exists == 'false'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: services/inventory-service
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.inventory-image.outputs.image_uri }}
-          cache-from: type=gha,scope=inventory-service
-          cache-to: type=gha,mode=max,scope=inventory-service
-      - name: Check immutable image for order-service
-        id: order-image
-        if: inputs.operation != 'rollback'
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: python3 scripts/deploy.py image-status --service order-service --sha "$RELEASE_SHA"
-      - name: Publish order-service when absent
-        if: inputs.operation != 'rollback' && steps.order-image.outputs.exists == 'false'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: services/order-service
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.order-image.outputs.image_uri }}
-          cache-from: type=gha,scope=order-service
-          cache-to: type=gha,mode=max,scope=order-service
-      - name: Check immutable image for notification-service
-        id: notification-image
-        if: inputs.operation != 'rollback'
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: python3 scripts/deploy.py image-status --service notification-service --sha "$RELEASE_SHA"
-      - name: Publish notification-service when absent
-        if: inputs.operation != 'rollback' && steps.notification-image.outputs.exists == 'false'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: services/notification-service
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.notification-image.outputs.image_uri }}
-          cache-from: type=gha,scope=notification-service
-          cache-to: type=gha,mode=max,scope=notification-service
-      - name: Check immutable image for keycloak
-        id: keycloak-image
-        if: inputs.operation != 'rollback'
-        env:
-          RELEASE_SHA: ${{ github.sha }}
-        run: python3 scripts/deploy.py image-status --service keycloak --sha "$RELEASE_SHA"
-      - name: Publish keycloak when absent
-        if: inputs.operation != 'rollback' && steps.keycloak-image.outputs.exists == 'false'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: infra/keycloak
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.keycloak-image.outputs.image_uri }}
-          cache-from: type=gha,scope=keycloak
-          cache-to: type=gha,mode=max,scope=keycloak
       - name: Require all five ARM64 images
         id: images-ready
         if: inputs.operation != 'rollback'

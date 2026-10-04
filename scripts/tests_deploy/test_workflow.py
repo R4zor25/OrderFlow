@@ -20,32 +20,45 @@ def check_contract(w):
     assert inputs['operation']['options']==['publish','deploy','rollback']
     jobs=w['jobs']; release=jobs['release']
     assert release['permissions']=={'contents':'read','id-token':'write'}
-    assert set(release['needs'])=={'validate','verify'}
+    assert set(release['needs'])=={'validate','verify','publish'}
     assert "github.ref == 'refs/heads/main'" in release['if']
     assert "needs.validate.result == 'success'" in release['if']
     assert "needs.verify.result == 'success'" in release['if']
     assert "inputs.operation == 'rollback'" in release['if']
     assert "needs.verify.result == 'skipped'" in release['if']
+    assert "needs.publish.result == 'success'" in release['if']
+    assert "needs.publish.result == 'skipped'" in release['if']
     assert "inputs.operation != 'rollback'" in jobs['verify']['if']
     assert jobs['verify']['needs']=='validate'
     for name,job in jobs.items():
         assert 'environment' not in job
-        if name!='release': assert job.get('permissions',{}).get('id-token')!='write'
+        if name not in ('release','publish'): assert job.get('permissions',{}).get('id-token')!='write'
         for step in job['steps']:
             if 'uses' in step: assert re.search(r'@[0-9a-f]{40}$',step['uses'])
     deploy=next(s for s in release['steps'] if s.get('id')=='deploy')
     assert "inputs.operation == 'deploy'" in deploy['if']
     assert "verify-images" in next(s['run'] for s in release['steps'] if s.get('id')=='images-ready')
     assert release['steps'].index(deploy)>next(i for i,s in enumerate(release['steps']) if s.get('id')=='images-ready')
-    builds=[s for s in release['steps'] if s.get('uses','').startswith('docker/build-push-action@')]
-    assert len(builds)==5
-    keycloak=next(s for s in builds if s['with']['context']=='infra/keycloak')
-    assert 'keycloak-image' in keycloak['if']
-    assert any('image-status --service keycloak' in s.get('run','') for s in release['steps'])
-    for step in builds:
-        assert 'exists' in step['if'] and "'false'" in step['if']
-        assert "inputs.operation != 'rollback'" in step['if']
-        assert step['with']['platforms']=='linux/arm64' and step['with']['push'] is True
+    assert not any(s.get('uses','').startswith('docker/build-push-action@') for s in release['steps'])
+    publish=jobs['publish']
+    assert publish['permissions']=={'contents':'read','id-token':'write'}
+    assert set(publish['needs'])=={'validate','verify'}
+    assert "inputs.operation != 'rollback'" in publish['if']
+    assert "github.ref == 'refs/heads/main'" in publish['if']
+    assert 'always()' not in publish['if']
+    assert publish['strategy']['fail-fast'] is False
+    images={i['name']:i['context'] for i in publish['strategy']['matrix']['include']}
+    assert images=={'catalog-pricing-service':'services/catalog-pricing-service',
+                    'inventory-service':'services/inventory-service',
+                    'order-service':'services/order-service',
+                    'notification-service':'services/notification-service',
+                    'keycloak':'infra/keycloak'}
+    assert any('image-status --service "$IMAGE_NAME"' in s.get('run','') for s in publish['steps'])
+    build=next(s for s in publish['steps'] if s.get('uses','').startswith('docker/build-push-action@'))
+    assert 'exists' in build['if'] and "'false'" in build['if']
+    assert build['with']['platforms']=='linux/arm64' and build['with']['push'] is True
+    creds=next(s for s in publish['steps'] if s.get('uses','').startswith('aws-actions/configure-aws-credentials@'))
+    assert creds['with']['role-duration-seconds']<=1800
     verify=jobs['verify']
     assert len(verify['strategy']['matrix']['service'])==4
     assert any('./mvnw -B -ntp -Pcoverage verify' in s.get('run','') for s in verify['steps'])
@@ -61,6 +74,10 @@ class WorkflowContractTests(unittest.TestCase):
                    lambda w:w['jobs']['release'].update(environment='production'),
                    lambda w:w['jobs']['release'].update({'if':"always()"}),
                    lambda w:w['jobs']['verify'].update({'if':"true"}),
+                   lambda w:w['jobs']['release'].update(needs=['validate','verify']),
+                   lambda w:w['jobs']['publish'].update(environment='production'),
+                   lambda w:w['jobs']['publish'].update({'if':"always()"}),
+                   lambda w:w['jobs']['publish']['strategy']['matrix']['include'].pop(),
                    lambda w:next(s for s in w['jobs']['release']['steps'] if s.get('id')=='deploy').update({'if':"inputs.operation == 'publish'"})]
         for mutate in mutations:
             w=copy.deepcopy(original); mutate(w)
