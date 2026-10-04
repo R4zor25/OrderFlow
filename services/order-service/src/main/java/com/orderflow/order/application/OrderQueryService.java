@@ -13,6 +13,7 @@ import com.orderflow.order.infrastructure.OrderRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,7 +39,7 @@ public class OrderQueryService {
         if (page < 0 || size < 1 || size > 100) {
             throw new InvalidOrderException("page must be non-negative and size must be between 1 and 100");
         }
-        Page<UUID> ids = orders.findPageIds(access.listFilter(customerId), status, PageRequest.of(page, size));
+        Page<UUID> ids = findPageIds(access.listFilter(customerId), status, PageRequest.of(page, size));
         if (ids.isEmpty()) {
             return new PageImpl<>(List.of(), ids.getPageable(), ids.getTotalElements());
         }
@@ -51,6 +52,20 @@ public class OrderQueryService {
             }
             return details;
         });
+    }
+
+    // One query per filter combination: an "is null or" predicate would hide every index from a generic plan.
+    private Page<UUID> findPageIds(UUID customerId, OrderStatus status, Pageable pageable) {
+        if (customerId != null && status != null) {
+            return orders.findPageIdsByCustomerAndStatus(customerId, status, pageable);
+        }
+        if (customerId != null) {
+            return orders.findPageIdsByCustomer(customerId, pageable);
+        }
+        if (status != null) {
+            return orders.findPageIdsByStatus(status, pageable);
+        }
+        return orders.findPageIds(pageable);
     }
 
     private List<OrderDetails> loadDetails(List<UUID> ids) {

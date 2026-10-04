@@ -16,16 +16,33 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     @Query(value = """
         select o.id from Order o
-        where (:customerId is null or o.customer.id = :customerId)
-          and (:status is null or o.status = :status)
+        order by o.createdAt desc, o.id desc
+        """, countQuery = "select count(o) from Order o")
+    Page<UUID> findPageIds(Pageable pageable);
+
+    @Query(value = """
+        select o.id from Order o
+        where o.customer.id = :customerId
+        order by o.createdAt desc, o.id desc
+        """, countQuery = "select count(o) from Order o where o.customer.id = :customerId")
+    Page<UUID> findPageIdsByCustomer(@Param("customerId") UUID customerId, Pageable pageable);
+
+    @Query(value = """
+        select o.id from Order o
+        where o.status = :status
+        order by o.createdAt desc, o.id desc
+        """, countQuery = "select count(o) from Order o where o.status = :status")
+    Page<UUID> findPageIdsByStatus(@Param("status") OrderStatus status, Pageable pageable);
+
+    @Query(value = """
+        select o.id from Order o
+        where o.customer.id = :customerId and o.status = :status
         order by o.createdAt desc, o.id desc
         """, countQuery = """
-        select count(o) from Order o
-        where (:customerId is null or o.customer.id = :customerId)
-          and (:status is null or o.status = :status)
+        select count(o) from Order o where o.customer.id = :customerId and o.status = :status
         """)
-    Page<UUID> findPageIds(@Param("customerId") UUID customerId,
-                           @Param("status") OrderStatus status, Pageable pageable);
+    Page<UUID> findPageIdsByCustomerAndStatus(@Param("customerId") UUID customerId,
+                                              @Param("status") OrderStatus status, Pageable pageable);
 
     @Query("""
         select distinct o from Order o

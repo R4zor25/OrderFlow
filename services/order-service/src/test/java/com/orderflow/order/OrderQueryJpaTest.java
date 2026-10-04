@@ -1,10 +1,13 @@
 package com.orderflow.order;
 
 import com.orderflow.order.application.OrderAccess;
+import com.orderflow.order.application.OrderDetails;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import com.orderflow.order.application.OrderQueryService;
 import com.orderflow.order.domain.Customer;
@@ -21,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -95,6 +99,42 @@ class OrderQueryJpaTest {
         assertThat(empty.getContent()).isEmpty();
         assertThat(empty.getTotalElements()).isEqualTo(1);
         assertThat(unfiltered.getTotalElements()).isEqualTo(3);
+    }
+
+    @Test
+    void listsEachFilterNewestFirstWithIdBreakingTies() {
+        Customer standard = customers.findById(UUID.fromString("33333333-3333-4333-8333-333333333333"))
+            .orElseThrow();
+        Customer gold = customers.findById(UUID.fromString("44444444-4444-4444-8444-444444444444"))
+            .orElseThrow();
+        Order older = order(standard, 1);
+        Order tiedFirst = order(standard, 2);
+        Order tiedSecond = order(standard, 2);
+        Order confirmed = order(standard, 3);
+        confirmed.confirm(Instant.parse("2026-10-01T11:00:00Z"));
+        Order goldOrder = order(gold, 4);
+        orders.saveAll(List.of(older, tiedFirst, tiedSecond, confirmed, goldOrder));
+        entityManager.flush();
+        entityManager.clear();
+        // PostgreSQL orders uuid values by their bytes, like their hex strings; UUID.compareTo uses signed longs.
+        var tied = Stream.of(tiedFirst.getId(), tiedSecond.getId())
+            .sorted(Comparator.comparing(UUID::toString).reversed()).toList();
+
+        assertThat(ids(queries.list(OrderAccess.admin(), null, null, 0, 10)))
+            .containsExactly(goldOrder.getId(), confirmed.getId(), tied.get(0), tied.get(1), older.getId());
+        assertThat(ids(queries.list(OrderAccess.admin(), standard.getId(), null, 0, 10)))
+            .containsExactly(confirmed.getId(), tied.get(0), tied.get(1), older.getId());
+        assertThat(ids(queries.list(OrderAccess.admin(), null, OrderStatus.PENDING, 0, 10)))
+            .containsExactly(goldOrder.getId(), tied.get(0), tied.get(1), older.getId());
+        var standardPending = queries.list(OrderAccess.admin(), standard.getId(), OrderStatus.PENDING, 0, 2);
+        assertThat(ids(standardPending)).containsExactly(tied.get(0), tied.get(1));
+        assertThat(standardPending.getTotalElements()).isEqualTo(3);
+        assertThat(ids(queries.list(OrderAccess.admin(), standard.getId(), OrderStatus.PENDING, 1, 2)))
+            .containsExactly(older.getId());
+    }
+
+    private static List<UUID> ids(Page<OrderDetails> page) {
+        return page.getContent().stream().map(item -> item.id()).toList();
     }
 
     @Test
