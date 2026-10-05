@@ -11,7 +11,7 @@ In scope:
 - Inventory that never oversells under concurrent load
 - Customer notifications driven by events
 - Local run with Docker Compose, CI on GitHub Actions, a real (temporary) deployment to AWS ECS Fargate
-- OAuth2/JWT with Keycloak: customer and admin roles, service-to-service client credentials (local Compose; AWS identity provider is a later step)
+- OAuth2/JWT with Keycloak: customer and admin roles, service-to-service client credentials (Keycloak runs in local Compose and as a Fargate service on AWS)
 
 Out of scope (deliberately): payments, shipping, UI, search, multi-currency conversion.
 
@@ -24,11 +24,11 @@ Out of scope (deliberately): payments, shipping, UI, search, multi-currency conv
 | Second framework | Micronaut 5.x | notification-service |
 | Build | Maven (wrapper per service) + root aggregator pom | |
 | Database | PostgreSQL 17, one schema per service, Flyway migrations | |
-| Persistence | Spring Data JPA / Hibernate; Micronaut Data JDBC | |
+| Persistence | Spring Data JPA / Hibernate (catalog, order); `JdbcTemplate` (inventory); Micronaut Data JDBC (notification) | |
 | Cache / keys | Redis 7 (Spring Cache + idempotency keys) | |
 | Messaging | Apache Kafka 4.x (KRaft, no ZooKeeper), Spring Kafka, Micronaut Kafka | |
 | HTTP client | Spring HTTP interface (`@HttpExchange`) on `RestClient` | |
-| Resilience | Resilience4j circuit breaker + retry | If the Boot 4 starter is not compatible, use `resilience4j-circuitbreaker` core programmatically |
+| Resilience | Resilience4j circuit breaker + retry | Core modules (`resilience4j-circuitbreaker`, `-retry`, `-micrometer`) configured programmatically |
 | API | REST, JSON, `/api/v1`, Bean Validation, RFC 9457 `ProblemDetail`, springdoc-openapi | |
 | Security | Spring Security OAuth2 resource server and client, Keycloak 26.8 | JWT roles claim, customer_id claim, client credentials for pricing |
 | Testing | JUnit 5, AssertJ, Mockito, Testcontainers (Postgres, Kafka, Redis), WireMock | |
@@ -36,7 +36,7 @@ Out of scope (deliberately): payments, shipping, UI, search, multi-currency conv
 | Containers | Multi-stage Dockerfiles, `linux/arm64` images | M1 builds arm64 natively, Fargate runs ARM64 (Graviton) |
 | CI/CD | GitHub Actions, OIDC to AWS, ECR, ECS rolling deploy with circuit breaker | |
 | IaC | Terraform | |
-| Cloud | AWS ECS Fargate, ALB, RDS PostgreSQL, ECS Service Connect, CloudWatch Logs, SSM Parameter Store | |
+| Cloud | AWS ECS Fargate, ALB, RDS PostgreSQL, ECS Service Connect, CloudWatch Logs, Secrets Manager (database password), SSM Parameter Store (Keycloak secrets) | |
 
 Versions: always take the latest patch of the listed minor from start.spring.io / micronaut.io / Maven Central at setup time and pin them. Do not trust version numbers from memory.
 
@@ -139,7 +139,7 @@ Tables:
 - `customer(id uuid pk, name, email, type varchar check in ('B2C','B2B'), customer_group_code)`, seeded with a few customers
 - `orders(id uuid pk, customer_id fk, status, currency, total_net, total_vat, total_gross, rejection_reason varchar(500) null, created_at, updated_at, version bigint)`; `REJECTED` requires a nonblank reason, other states have none
 - `order_line(id uuid pk, order_id fk, sku, quantity, unit_price_net, line_total_net)`
-- `outbox_event(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb null, created_at, delivery_order bigint, published_at null)` with partial indexes on unpublished rows; `delivery_order` protects per-aggregate publication order, and `headers` can carry trace context (`traceparent`) for the relay
+- `outbox_event(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb null, created_at, delivery_order bigint, published_at null, attempts int, last_error null, parked_at null)` with partial indexes on unpublished rows; `delivery_order` protects per-aggregate publication order, and `headers` can carry trace context (`traceparent`) for the relay
 - `processed_event(event_id uuid pk, processed_at)`
 
 State machine (enforced in the domain entity, not in controllers):
@@ -183,6 +183,7 @@ Tables:
 - `stock_item(sku varchar pk, on_hand int, reserved int, low_stock_threshold int, low_stock_notified boolean, version bigint, updated_at)` with `check (reserved >= 0 and reserved <= on_hand)`
 - `reservation(id uuid pk, order_id uuid, sku, quantity, status varchar check in ('RESERVED','RELEASED'), created_at)`, unique `(order_id, sku)`
 - `outbox_event`, `processed_event` (same shape as order-service)
+- `cancelled_order(order_id uuid pk, cancelled_at)`: remembers cancellations so a late `OrderPlaced` reserves nothing
 - `shedlock` table for scheduled job locking
 
 Reservation algorithm:
@@ -243,7 +244,7 @@ Every topic, including the DLTs (each by the consumer group that writes it), is 
 
 ### 5.2 Event envelope
 
-All events share one JSON envelope. Each service keeps its own copy of the event classes (no shared library); `contracts/events/*.json` holds one canonical sample per event and every consumer has a test that deserializes those samples.
+All events share one JSON envelope. Each service keeps its own copy of the event classes (no shared library); `contracts/events/*.json` holds one canonical sample per event and every consumer has a test that deserializes those samples, and producer-side contract tests compare every event the order and inventory writers produce with its sample field by field.
 
 ```json
 {
@@ -341,14 +342,14 @@ Why choreography and not an orchestrator: two participants, three outcomes and o
 API conventions:
 
 - DTOs are Java records in an `api` package; entities never leave the service layer.
-- Business, validation and framework request errors map to `ProblemDetail` (`application/problem+json`) in one `@RestControllerAdvice` per service, with a stable relative `type` URI per error (`/problems/insufficient-stock` etc.); other unexpected exceptions still reach Spring Boot's default error response, as there is no catch-all. Malformed requests are 400 `/problems/bad-request` in order-service (bad JSON, missing header or parameter, wrong type, plus `/problems/not-found` and `/problems/http-error` for other framework statuses); catalog-pricing-service answers bad JSON and wrong types with 400 `/problems/validation`. Bean Validation failures carry a `violations` map (field → message): order-service answers them with 422 `/problems/invalid-order` (a business-level rejection of the order), catalog-pricing-service with 400 `/problems/validation`. An unreachable database is 503 `/problems/database-unavailable` with `Retry-After`.
+- Business, validation and framework request errors map to `ProblemDetail` (`application/problem+json`) in one `@RestControllerAdvice` per service, with a stable relative `type` URI per error (`/problems/insufficient-stock` etc.); other unexpected exceptions still reach Spring Boot's default error response, as there is no catch-all. Malformed requests are 400 `/problems/bad-request` in order-service (bad JSON, missing header or parameter, wrong type, plus `/problems/not-found` and `/problems/http-error` for other framework statuses); catalog-pricing-service answers bad JSON and wrong types with 400 `/problems/validation`. Bean Validation failures carry a `violations` map (field → message): order-service answers them with 422 `/problems/invalid-order` (a business-level rejection of the order), catalog-pricing-service with 400 `/problems/validation`. In order-service an unreachable database is 503 `/problems/database-unavailable` with `Retry-After`; catalog-pricing-service and inventory-service do not map it yet and answer 500.
 - Pagination via `Pageable`, max page size 100. The order list runs one query per filter combination, each backed by an index that covers the `created_at desc, id desc` sort, so a generic plan needs no Sort step; the page total still costs a count over the filtered rows.
 - Request limits: order lines, quote lines and price tiers are capped at 100 per request. Request bodies above 64 KiB (`order.http.max-request-body-size`, `catalog.http.max-request-body-size`) are rejected with 413 `/problems/payload-too-large` before parsing when the length is known, and cut off (400) when it is not. Each line's quantity is at most 10 000 and a SKU may appear only once per order or quote; order totals must fit the stored `numeric(12,2)` range (otherwise 422 `/problems/invalid-order`).
 - OpenAPI UI at `/swagger-ui.html` on Spring services (springdoc-openapi). `/v3/api-docs` and the UI are public (contract only, no data); the UI declares one bearer-JWT scheme for every operation so protected endpoints can be tried with a Keycloak token (catalog's public product reads also show it but need no token). The ALB does not route these paths. The generated description covers paths, parameters, headers and request schemas; success statuses (it shows 200 where the API answers 202, 201 or 204) and ProblemDetail errors are not described there, so this document stays the reference for them.
 
 Configuration:
 
-- `application.yml` with profiles `local` (Compose) and `aws`. Secrets only from environment variables; on AWS they come from SSM Parameter Store through the ECS task definition.
+- `application.yml` with profiles `local` (Compose) and `aws`. Secrets only from environment variables; on AWS the ECS task definition injects them from Secrets Manager (database password) and SSM Parameter Store (Keycloak secrets).
 
 Security:
 
@@ -367,7 +368,7 @@ Security:
 
 Observability:
 
-- Actuator: `health` with `liveness` and `readiness` groups, `info`, `metrics`, `prometheus`. The ALB and container health checks use liveness, so a database, Redis or Kafka outage never makes ECS replace healthy tasks; requests meanwhile get the documented 503 ProblemDetails or degrade (outbox, quote from the database). Spring readiness is `readinessState,db` (used for Compose start-up order); a task that alone loses its database stays in rotation and answers 503. Redis and Kafka state stays visible in the full `/actuator/health` (and Micronaut `/health`) for alerting. The Kafka health check reuses one long-lived admin client per service instead of creating one per probe.
+- Actuator: `health` with `liveness` and `readiness` groups, `info`, `metrics`, `prometheus`. The ALB and container health checks use liveness, so a database, Redis or Kafka outage never makes ECS replace healthy tasks; requests meanwhile get 503 ProblemDetails (order-service; catalog and inventory answer 500 for a database outage) or degrade (outbox, quote from the database). Spring readiness is `readinessState,db` (used for Compose start-up order); a task that alone loses its database stays in rotation and answers 503. Redis and Kafka state stays visible in the full `/actuator/health` (and Micronaut `/health`) for alerting. The Kafka health check reuses one long-lived admin client per service instead of creating one per probe.
 - Operational metrics: `outbox.lag.seconds` (order, inventory), `messaging.dead.letters{topic}` (registered at startup, counted after a confirmed DLT send), Resilience4j `resilience4j.circuitbreaker.*` and `resilience4j.retry.*` for `name=pricing` in order-service, and `cache.gets{cache=price-tiers,result=hit|miss}` in catalog. All three Spring services expose `/actuator/prometheus`.
 - Structured JSON logs: Spring uses ECS (`logging.structured.format.console=ecs`), Micronaut uses Logback JSON. Active traced operations include trace/span IDs (Spring `traceId`/`spanId`, Micronaut `mdc.trace_id`/`mdc.span_id`); startup/background logs without an active span may omit them.
 - Spring uses Micrometer Tracing with the OpenTelemetry bridge; observation is enabled on `KafkaTemplate` and listener containers. Micronaut uses its OpenTelemetry Kafka integration and a scoped consumer-processing span around the notification listener.
@@ -376,7 +377,6 @@ Observability:
 - Custom counters: `orders.placed` (new order persisted), `orders.rejected` (actual rejection from stock result), `inventory.reservation.failed` (new durable failed reservation outcome). Increment after successful database commit; rollback, duplicate event IDs, HTTP idempotency replay and ignored cancelled-order results do not increment them. Labels are bounded: `customerType=B2B/B2C` on order counters, fixed `reason` categories on rejection/failure counters. Never use IDs, SKUs or free-form reasons as labels.
 - notification-service publishes `notifications.delivery{outcome=sent|retry|failed}`, the `notifications.pending` and `notifications.failed` backlog gauges, `messaging.dead.letters{topic}` and the Kafka client's consumer metrics (including `records-lag-max`, which shows a slow consumer; a dead consumer stops reporting it, so broker-side consumer-group lag is the reliable signal) on `/prometheus`, without a token. No Prometheus server is provisioned.
 - Counters are per application process and reset on restart. Commit-to-increment crashes and missed scrapes can lose measurements; metrics show operational trends rather than durable accounting totals. Each instance must be scraped independently when scaling.
-- Optional: `grafana/otel-lgtm` container in Compose to show traces and metrics.
 
 Performance:
 
@@ -441,14 +441,20 @@ orderflow/
 ├── pom.xml                         # aggregator only (packaging pom, lists modules)
 ├── contracts/events/               # one canonical JSON sample per event
 ├── docs/
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   ├── CI.md                       # CI policy and local verification
+│   └── DEPLOYMENT.md               # manual ECS release and rollback runbook
 ├── infra/
 │   ├── docker-compose.yaml         # infra + all services
 │   ├── postgres/init.sql           # creates schemas
+│   ├── keycloak/                   # realm export and the AWS Keycloak image
 │   └── terraform/
 ├── scripts/
 │   ├── smoke.sh                    # end-to-end curl + jq scenario
-│   └── oversell-test.sh            # fires N parallel orders at one SKU
+│   ├── oversell-test.sh            # fires N parallel orders at one SKU
+│   ├── dlt-replay.sh               # republishes one dead-lettered record
+│   ├── deploy.py                   # ECS release/rollback helper used by deploy.yml
+│   └── tests_*/                    # Python checks for images, Compose, CI and deploy
 ├── services/
 │   ├── catalog-pricing-service/    # standalone Maven project with mvnw
 │   ├── order-service/

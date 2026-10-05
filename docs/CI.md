@@ -110,9 +110,9 @@ These checks do not execute GitHub orchestration, permissions, cache transport o
 artifact upload. This repository currently has no configured remote. After
 publishing it, verify one inventory-only PR, one shared-contract/configuration PR,
 and one documentation-only PR; confirm the matrix, artifacts and final check.
-Then enable branch protection. The full Compose smoke/oversell tests remain
-separately runnable; this workflow's service jobs run Maven tests and image builds.
+Then enable branch protection. The `compose-stack` job runs the full Compose suite,
+including the smoke and 50-order oversell scenarios; the service jobs run Maven tests and image builds.
 
 ## Manual release workflow
 
-`deploy.yml` is a separate manual workflow. Publish/deploy reverify all four services; rollback skips those builds but retains target/helper checks. Only its release job requests an OIDC token. The existing CI also executes `scripts/tests_deploy` regression tests. Setup, bootstrap ownership and explicit rollback inputs are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Hosted runs remain pending.
+`deploy.yml` is a separate manual workflow. Publish/deploy reverify all four services; rollback skips those builds but retains target/helper checks. Only its image-publishing and release jobs request an OIDC token. The existing CI also executes `scripts/tests_deploy` regression tests. Setup, bootstrap ownership and explicit rollback inputs are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Hosted runs remain pending.
