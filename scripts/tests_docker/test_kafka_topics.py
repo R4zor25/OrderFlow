@@ -79,5 +79,5 @@ class KafkaTopicsInitTest(unittest.TestCase):
             self.assertIn('ReplicationFactor: 1', described, topic)
             configs = docker('exec', self.broker, '/opt/kafka/bin/kafka-configs.sh', '--bootstrap-server',
                              'localhost:9092', '--describe', '--entity-type', 'topics', '--entity-name', topic).stdout
-            self.assertIn('retention.ms=604800000', configs, topic)
-            self.assertIn('segment.ms=86400000', configs, topic)
+            self.assertRegex(configs, r'(?m)^\s*retention\.ms=604800000\b', topic)
+            self.assertRegex(configs, r'(?m)^\s*segment\.ms=86400000\b', topic)
