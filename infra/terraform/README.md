@@ -238,6 +238,19 @@ terraform -chdir=infra/terraform plan -destroy -var-file=orderflow.tfvars -var="
 
 Inspect before explicitly applying. Confirm ECS, Cloud Map, ALB, RDS, log groups,
 network interfaces, public IPv4 and ECR resources in the account afterward.
+
+Destroy leaves the application task-definition revisions ACTIVE: Terraform keeps them
+for rollback (`skip_destroy`), and the release workflow registers further revisions outside
+Terraform. ECS filters by the full family name, so list each application family
+(replace `orderflow` with your `project_name`) and deregister its revisions:
+
+```bash
+for family in catalog-pricing-service inventory-service order-service notification-service; do
+  aws ecs list-task-definitions --family-prefix "orderflow-$family" --status ACTIVE \
+    --query 'taskDefinitionArns[]' --output text
+done
+aws ecs deregister-task-definition --task-definition <task-definition-arn>
+```
 Deleting local state is not teardown.
 
 ## References

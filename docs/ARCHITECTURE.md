@@ -334,7 +334,7 @@ Compensation: `OrderCancelled` makes inventory release the order's reservations 
 
 Timeout: order-service cancels orders still `PENDING` after `order.saga.pending-timeout` (default 15 minutes). A ShedLock-guarded sweep runs every minute, handles at most 100 orders per run with `FOR UPDATE SKIP LOCKED`, and writes the normal `OrderCancelled` (`previousStatus` `PENDING`), so inventory releases any late reservation and the customer is notified. The `orders.pending.oldest.age.seconds` gauge shows the age of the oldest pending order.
 
-Why choreography and not an orchestrator: two participants and three outcomes. An orchestrator (or Temporal/Camunda) is the answer once the flow has payment, shipping and timeouts.
+Why choreography and not an orchestrator: two participants, three outcomes and one timeout, which order-service handles with a sweep. An orchestrator (or Temporal/Camunda) becomes the answer once more participants such as payment and shipping join, or when compensation steps depend on each other.
 
 ## 6. Cross-cutting concerns
 
