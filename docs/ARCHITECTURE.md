@@ -110,7 +110,7 @@ Endpoints:
 | GET | `/api/v1/products?category=&page=&size=` | public | Paged |
 | GET | `/api/v1/products/{sku}` | public | 404 as ProblemDetail |
 | POST | `/api/v1/products` | `ADMIN` | Validated |
-| PUT | `/api/v1/products/{sku}/prices` | `ADMIN` | Replaces tier list for a group, evicts cache |
+| PUT | `/api/v1/products/{sku}/prices` | `ADMIN` | Replaces tier list for a group; writes the new list to the cache after commit |
 | POST | `/api/v1/quotes` | `SCOPE_pricing.quote` (order-service client credentials) | Side-effect free; internal, called by order-service only (not routed by the ALB) |
 
 Quote request/response:
