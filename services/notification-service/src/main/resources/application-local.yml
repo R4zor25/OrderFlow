@@ -13,7 +13,7 @@ kafka:
   health:
     enabled: true
   bootstrap:
-    servers: ${KAFKA_BOOTSTRAP:localhost:9094}
+    servers: ${KAFKA_BOOTSTRAP:`localhost:9094`}
 
 javamail:
   enabled: true
