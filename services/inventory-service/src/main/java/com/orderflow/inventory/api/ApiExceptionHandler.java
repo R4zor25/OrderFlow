@@ -6,11 +6,16 @@ import java.util.TreeMap;
 
 import com.orderflow.inventory.stock.domain.StockBelowReservedException;
 import com.orderflow.inventory.stock.domain.StockNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,6 +25,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final URI DEFAULT_TYPE = URI.create("about:blank");
 
     @ExceptionHandler(StockNotFoundException.class)
@@ -30,6 +36,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(StockBelowReservedException.class)
     ProblemDetail stockBelowReserved(StockBelowReservedException exception) {
         return problem(HttpStatus.CONFLICT, "stock-below-reserved", "Stock below reserved", exception.getMessage());
+    }
+
+    @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class,
+        QueryTimeoutException.class})
+    ResponseEntity<ProblemDetail> databaseUnavailable(Exception exception) {
+        log.warn("Database unavailable cause={}", exception.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header("Retry-After", "5")
+            .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "database-unavailable", "Database unavailable",
+                "The database is temporarily unavailable"));
     }
 
     @Override

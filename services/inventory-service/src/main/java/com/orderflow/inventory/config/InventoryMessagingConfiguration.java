@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.ConsumerAwareRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -62,7 +63,9 @@ public class InventoryMessagingConfiguration {
             backOff.setMaxInterval(properties.maxInterval().toMillis());
             // No elapsed-time limit: a database outage pauses the partition instead of dead-lettering a saga step.
             var handler = new DefaultErrorHandler(counted, backOff);
-            handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
+            // A constraint violation fails the same way on every attempt; only a dead letter lets the partition move on.
+            handler.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class,
+                DataIntegrityViolationException.class);
             return handler;
         }
 

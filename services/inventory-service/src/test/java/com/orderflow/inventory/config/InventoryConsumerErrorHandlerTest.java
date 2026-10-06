@@ -11,16 +11,19 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,6 +74,28 @@ class InventoryConsumerErrorHandlerTest {
             new ConsumerRecord<>(SOURCE, 0, 0, "k", "v"), mock(Consumer.class), mock(MessageListenerContainer.class)));
 
         assertThat(deadLetters()).isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deadLettersAConstraintViolationWithoutRetrying() {
+        when(kafka.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+
+        boolean handled = handler.handleOne(new DataIntegrityViolationException("value too long"),
+            new ConsumerRecord<>(SOURCE, 0, 0, "k", "v"), mock(Consumer.class), mock(MessageListenerContainer.class));
+
+        assertThat(handled).isTrue();
+        verify(kafka).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void keepsRetryingATransientDatabaseFailure() {
+        boolean handled = handler.handleOne(new CannotCreateTransactionException("database down"),
+            new ConsumerRecord<>(SOURCE, 0, 0, "k", "v"), mock(Consumer.class), mock(MessageListenerContainer.class));
+
+        assertThat(handled).isFalse();
+        verify(kafka, never()).send(any(ProducerRecord.class));
     }
 
     private double deadLetters() {
