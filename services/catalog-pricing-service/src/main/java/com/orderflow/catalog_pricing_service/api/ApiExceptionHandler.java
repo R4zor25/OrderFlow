@@ -7,14 +7,19 @@ import java.util.TreeMap;
 
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -30,6 +35,8 @@ import com.orderflow.catalog_pricing_service.price.application.InvalidPriceListE
 @RestControllerAdvice
 @NullMarked
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @Override
     protected @Nullable ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -94,6 +101,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidPriceListException.class)
     public ProblemDetail invalidPriceList(InvalidPriceListException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "invalid-price-list", "Invalid price list", exception.getMessage());
+    }
+
+    @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class,
+        QueryTimeoutException.class})
+    ResponseEntity<ProblemDetail> databaseUnavailable(Exception exception) {
+        log.warn("Database unavailable cause={}", exception.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header("Retry-After", "5")
+            .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "database-unavailable", "Database unavailable",
+                "The database is temporarily unavailable"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
