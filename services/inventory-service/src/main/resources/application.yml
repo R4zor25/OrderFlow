@@ -70,7 +70,8 @@ inventory:
       dlt-send-timeout: 10s
   outbox:
     relay:
-      ack-timeout: 10s
+      # Longer than the producer's delivery.timeout.ms (10 s), so the producer gives the final answer and a late delivery is not sent again.
+      ack-timeout: 15s
 
 server:
   port: 8083

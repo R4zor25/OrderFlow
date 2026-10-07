@@ -140,10 +140,10 @@ public class InventoryOutboxRelay {
             permanent ? Timestamp.from(clock.instant()) : null, event.id());
         if (permanent) {
             log.error("Parked undeliverable outbox event eventId={} aggregateId={} eventType={} attempts={} cause={}",
-                event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
+                event.id(), event.aggregateId(), event.eventType(), attempts, OutboxPublishFailure.cause(failure).getClass().getSimpleName());
         } else {
             log.warn("Outbox event delivery failed, will retry eventId={} aggregateId={} eventType={} attempts={} cause={}",
-                event.id(), event.aggregateId(), event.eventType(), attempts, failure.getClass().getSimpleName());
+                event.id(), event.aggregateId(), event.eventType(), attempts, OutboxPublishFailure.cause(failure).getClass().getSimpleName());
         }
     }
 

@@ -100,7 +100,8 @@ order:
     batch-size: 1000
   outbox:
     relay:
-      ack-timeout: 10s
+      # Longer than the producer's delivery.timeout.ms (10 s), so the producer gives the final answer and a late delivery is not sent again.
+      ack-timeout: 15s
   idempotency:
     ttl: 24h
     in-progress-lease: 60s
