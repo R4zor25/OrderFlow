@@ -114,13 +114,19 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
     }
 
     private List<String> deadLetters() {
+        var dlt = NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT";
         var values = new ArrayList<String>();
         try (var consumer = new KafkaConsumer<String, String>(Map.of("bootstrap.servers", kafka.getBootstrapServers(),
-                "group.id", "retry-dlt-" + UUID.randomUUID(), "key.deserializer", StringDeserializer.class,
-                "value.deserializer", StringDeserializer.class, "auto.offset.reset", "earliest"))) {
-            consumer.subscribe(List.of(NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT"));
-            var deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
-            while (System.nanoTime() < deadline) {
+                "key.deserializer", StringDeserializer.class, "value.deserializer", StringDeserializer.class))) {
+            var partitions = consumer.partitionsFor(dlt).stream()
+                    .map(info -> new TopicPartition(dlt, info.partition())).toList();
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
+            var end = consumer.endOffsets(partitions);
+            // Reading up to the end offsets returns exactly the records written so far, without a group rebalance.
+            var deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (partitions.stream().anyMatch(partition -> consumer.position(partition) < end.get(partition))
+                    && System.nanoTime() < deadline) {
                 consumer.poll(Duration.ofMillis(250)).forEach(record -> values.add(record.value()));
             }
         }
