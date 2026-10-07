@@ -45,6 +45,12 @@ notification:
     max-backoff: 1h
     max-attempts: 10
     batch-size: 20
+  retention:
+    enabled: true
+    cron: "0 30 3 * * *"
+    # Far longer than the 7-day topic retention, because the row is also the event's deduplication record.
+    period: 30d
+    batch-size: 1000
 
 kafka:
   health-timeout: 2s

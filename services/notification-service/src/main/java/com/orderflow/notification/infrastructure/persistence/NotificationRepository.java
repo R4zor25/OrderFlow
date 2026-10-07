@@ -61,7 +61,21 @@ public interface NotificationRepository extends CrudRepository<NotificationRow, 
             """, nativeQuery = true)
     int extendLease(List<UUID> ids, Instant leaseUntil);
 
+    @Query(value = """
+            DELETE FROM notifications.notification WHERE id IN (
+                SELECT id FROM notifications.notification
+                WHERE status IN ('SENT', 'FAILED') AND created_at < :cutoff
+                ORDER BY created_at
+                LIMIT :limit)
+            """, nativeQuery = true)
+    int deleteClosedBefore(Instant cutoff, int limit);
+
     List<NotificationRow> findByOrderIdOrderByCreatedAt(UUID orderId);
 
-    long countByStatus(String status);
+    // Literal statuses let PostgreSQL use the partial indexes; a bound parameter would rule them out in a generic plan.
+    @Query(value = "SELECT count(*) FROM notifications.notification WHERE status = 'PENDING'", nativeQuery = true)
+    long countPending();
+
+    @Query(value = "SELECT count(*) FROM notifications.notification WHERE status = 'FAILED'", nativeQuery = true)
+    long countFailed();
 }

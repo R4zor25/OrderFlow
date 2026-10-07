@@ -17,9 +17,9 @@ public class NotificationBacklogMetrics implements MeterBinder {
 
     @Override
     public void bindTo(MeterRegistry registry) {
-        Gauge.builder("notifications.pending", repository, notifications -> notifications.countByStatus("PENDING"))
+        Gauge.builder("notifications.pending", repository, notifications -> notifications.countPending())
                 .description("Notifications waiting for a delivery attempt").register(registry);
-        Gauge.builder("notifications.failed", repository, notifications -> notifications.countByStatus("FAILED"))
+        Gauge.builder("notifications.failed", repository, notifications -> notifications.countFailed())
                 .description("Notifications that exhausted their delivery attempts").register(registry);
     }
 }
