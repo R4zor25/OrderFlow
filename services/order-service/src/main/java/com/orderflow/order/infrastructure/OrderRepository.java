@@ -1,5 +1,6 @@
 package com.orderflow.order.infrastructure;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -53,4 +54,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findAllWithCustomerAndLines(@Param("ids") List<UUID> ids);
 
     Optional<Order> findByCustomerIdAndIdempotencyKey(UUID customerId, String idempotencyKey);
+
+    @Query(value = """
+        select id from orders.orders
+        where status = 'PENDING' and created_at < :cutoff
+        order by created_at, id
+        limit :limit
+        for update skip locked
+        """, nativeQuery = true)
+    List<UUID> lockExpiredPendingIds(@Param("cutoff") Instant cutoff, @Param("limit") int limit);
 }

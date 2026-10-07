@@ -47,4 +47,10 @@ class OrderAccessTest {
     void customerAccessRequiresCustomerId() {
         assertThatThrownBy(() -> OrderAccess.customer(null)).isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    void constructorRejectsCustomerAccessWithoutCustomerId() {
+        assertThatThrownBy(() -> new OrderAccess(false, null)).isInstanceOf(NullPointerException.class);
+        assertThat(OrderAccess.admin().customerId()).isNull();
+    }
 }
