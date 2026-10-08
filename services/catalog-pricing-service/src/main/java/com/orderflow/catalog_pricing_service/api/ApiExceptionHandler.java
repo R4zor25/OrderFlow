@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
@@ -106,7 +107,9 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class,
         QueryTimeoutException.class})
     ResponseEntity<ProblemDetail> databaseUnavailable(Exception exception) {
-        log.warn("Database unavailable cause={}", exception.getClass().getSimpleName());
+        // The most specific cause tells pool exhaustion apart from authentication or DNS failures.
+        log.warn("Database unavailable cause={} rootCause={}", exception.getClass().getSimpleName(),
+            NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
             .header("Retry-After", "5")
             .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "database-unavailable", "Database unavailable",
