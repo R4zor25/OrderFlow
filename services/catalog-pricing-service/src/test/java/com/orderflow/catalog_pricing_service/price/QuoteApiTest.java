@@ -86,7 +86,7 @@ class QuoteApiTest {
     }
 
     @Test
-    void priceUpdateEvictsCachedTiers() throws Exception {
+    void quoteSeesEachNewPriceRightAfterAPriceUpdate() throws Exception {
         mvc.perform(post("/api/v1/products").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

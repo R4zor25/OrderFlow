@@ -104,9 +104,11 @@ class OrderSecurityIntegrationTest {
 
     @Test
     void rejectsTokenNotSignedByRealm() throws Exception {
+        // A valid, unexpired token signed with a foreign key: only the signature check can reject it.
         mvc.perform(get("/api/v1/orders").header("Authorization",
-                bearer(TestJwts.expiredCustomer(UUID.fromString(STANDARD)))))
-            .andExpect(status().isUnauthorized());
+                bearer(TestJwts.customer(UUID.fromString(STANDARD)))))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.type").value("/problems/unauthorized"));
     }
 
     @Test
