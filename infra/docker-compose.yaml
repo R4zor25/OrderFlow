@@ -21,7 +21,9 @@ services:
 
   redis:
     image: redis:7.4.11-bookworm
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    # No snapshots: every key has a TTL and the durable idempotency record is in PostgreSQL;
+    # a background save would fork Redis and count against the container memory.
+    command: ["redis-server", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

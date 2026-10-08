@@ -30,6 +30,7 @@ locals {
       }
     }
     # volatile-lru evicts only expiring keys; every key has a TTL, so a write never hits the memory limit.
+    # No snapshots: the durable idempotency record is in PostgreSQL, and a background save would fork Redis.
     redis = {
       alias          = "redis"
       port           = 6379
@@ -37,7 +38,7 @@ locals {
       memory         = 384
       image          = "redis:7.4.11-bookworm"
       health_command = "redis-cli ping | grep -q PONG"
-      command        = ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+      command        = ["redis-server", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
       environment    = {}
     }
   }

@@ -141,9 +141,9 @@ run "bootstrap_runtime" {
     error_message = "Kafka and Redis must redeploy without two instances serving the same alias."
   }
   assert {
-    condition = (jsondecode(aws_ecs_task_definition.infrastructure["redis"].container_definitions)[0].command == ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    condition = (jsondecode(aws_ecs_task_definition.infrastructure["redis"].container_definitions)[0].command == ["redis-server", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     && lookup(jsondecode(aws_ecs_task_definition.infrastructure["kafka"].container_definitions)[0], "command", null) == null)
-    error_message = "Redis must be memory-bounded with volatile-lru; the Kafka broker keeps its image command."
+    error_message = "Redis must run without snapshots, memory-bounded with volatile-lru; the Kafka broker keeps its image command."
   }
   assert {
     condition = (length(jsondecode(aws_ecs_task_definition.infrastructure["redis"].container_definitions)) == 1 &&

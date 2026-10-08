@@ -13,3 +13,4 @@ class RedisConfigTest(unittest.TestCase):
         self.assertIsNotNone(service, 'redis service is missing')
         self.assertIn('"--maxmemory", "256mb"', service.group(1))
         self.assertIn('"--maxmemory-policy", "volatile-lru"', service.group(1))
+        self.assertIn('"--save", ""', service.group(1))
