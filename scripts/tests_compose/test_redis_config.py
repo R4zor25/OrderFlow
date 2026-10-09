@@ -14,3 +14,5 @@ class RedisConfigTest(unittest.TestCase):
         self.assertIn('"--maxmemory", "256mb"', service.group(1))
         self.assertIn('"--maxmemory-policy", "volatile-lru"', service.group(1))
         self.assertIn('"--save", ""', service.group(1))
+        # Without snapshots nothing is written to disk; a mounted volume would only reload a stale dump.rdb.
+        self.assertNotIn('volumes:', service.group(1))
