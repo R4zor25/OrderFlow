@@ -61,6 +61,12 @@ class OutboxPublishFailureTest {
     }
 
     @Test
+    void bareKafkaExceptionWrappingAPermanentErrorIsPermanent() {
+        assertThat(OutboxPublishFailure.isPermanent(
+            new KafkaException("send failed", new RecordTooLargeException("too large")))).isTrue();
+    }
+
+    @Test
     void causeIsTheClassifiedKafkaError() {
         var failure = new ExecutionException(new KafkaProducerException(
             new ProducerRecord<>("topic", "key", "value"), "send failed", new RecordTooLargeException("too large")));
