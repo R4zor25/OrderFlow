@@ -56,13 +56,12 @@ locals {
       priority       = 30
       paths          = ["/api/v1/stock", "/api/v1/stock/*", "/api/v1/reservations"]
       environment = {
-        INVENTORY_DB_URL               = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=inventory&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
-        INVENTORY_DB_USERNAME          = aws_db_instance.main.username
-        SPRING_PROFILES_ACTIVE         = "aws"
-        KAFKA_BOOTSTRAP                = "kafka:9092"
-        INVENTORY_OUTBOX_RELAY_ENABLED = "true"
-        INVENTORY_JWT_ISSUER_URI       = local.keycloak_issuer
-        INVENTORY_JWT_JWK_SET_URI      = "${local.keycloak_internal}/certs"
+        INVENTORY_DB_URL          = "jdbc:postgresql://${aws_db_instance.main.endpoint}/orderflow?currentSchema=inventory&sslmode=verify-full&sslrootcert=/application/rds-global-bundle.pem"
+        INVENTORY_DB_USERNAME     = aws_db_instance.main.username
+        SPRING_PROFILES_ACTIVE    = "aws"
+        KAFKA_BOOTSTRAP           = "kafka:9092"
+        INVENTORY_JWT_ISSUER_URI  = local.keycloak_issuer
+        INVENTORY_JWT_JWK_SET_URI = "${local.keycloak_internal}/certs"
       }
     }
     "notification-service" = {

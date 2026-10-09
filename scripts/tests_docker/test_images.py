@@ -69,9 +69,10 @@ class ServiceImageTest(unittest.TestCase):
                 'DATASOURCES_DEFAULT_USERNAME': 'orderflow', 'DATASOURCES_DEFAULT_PASSWORD': 'benchmark-only',
                 'KAFKA_BOOTSTRAP_SERVERS': 'kafka:9092', 'KAFKA_HEALTH_ENABLED': 'true',
                 'NOTIFICATION_MESSAGING_ENABLED': 'true', 'NOTIFICATION_CHANNEL': 'LOG'})
-        if service in ('order-service', 'inventory-service'):
-            prefix = 'ORDER' if service == 'order-service' else 'INVENTORY'
-            env.update({prefix + '_MESSAGING_ENABLED': 'true', prefix + '_OUTBOX_RELAY_ENABLED': 'true'})
+        if service == 'order-service':
+            env.update({'ORDER_MESSAGING_ENABLED': 'true', 'ORDER_OUTBOX_RELAY_ENABLED': 'true'})
+        elif service == 'inventory-service':
+            env['INVENTORY_MESSAGING_ENABLED'] = 'true'
         args = ['docker', 'create', '--name', name, '--network', self.project + '_default',
                 '--memory', f'{memory_mib}m', '--cpus', '1', '-p', f'127.0.0.1::{port}']
         for key, value in env.items():

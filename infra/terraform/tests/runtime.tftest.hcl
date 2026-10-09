@@ -119,7 +119,7 @@ run "bootstrap_runtime" {
     condition = (alltrue([for name, expected in {
       catalog-pricing-service = { SPRING_PROFILES_ACTIVE = "aws", CATALOG_REDIS_HOST = "redis" }
       order-service           = { SPRING_PROFILES_ACTIVE = "aws", ORDER_REDIS_HOST = "redis", KAFKA_BOOTSTRAP = "kafka:9092", CATALOG_PRICING_BASE_URL = "http://catalog-pricing:8081" }
-      inventory-service       = { SPRING_PROFILES_ACTIVE = "aws", KAFKA_BOOTSTRAP = "kafka:9092", INVENTORY_OUTBOX_RELAY_ENABLED = "true" }
+      inventory-service       = { SPRING_PROFILES_ACTIVE = "aws", KAFKA_BOOTSTRAP = "kafka:9092" }
       notification-service    = { MICRONAUT_ENVIRONMENTS = "aws", KAFKA_BOOTSTRAP = "kafka:9092" }
     } : alltrue([for key, value in expected : { for e in jsondecode(aws_ecs_task_definition.application[name].container_definitions)[0].environment : e.name => e.value }[key] == value])]))
     error_message = "AWS profiles and internal dependency inputs must enable the whole business flow."

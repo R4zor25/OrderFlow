@@ -193,7 +193,6 @@ services:
       SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orderflow?currentSchema=inventory
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      INVENTORY_OUTBOX_RELAY_ENABLED: "true"
       INVENTORY_JWT_JWK_SET_URI: http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs
     depends_on:
       postgres:
