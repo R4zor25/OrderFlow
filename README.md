@@ -149,7 +149,7 @@ Request and response details, status codes and the event envelope are in [ARCHIT
 cd services/<service> && ./mvnw verify                    # one service
 ```
 
-- **Service tests (JUnit):** about 520 tests in total.
+- **Service tests (JUnit):** about 540 tests in total.
   - Domain logic has plain unit tests.
   - Web and JPA slices use `@WebMvcTest` and `@DataJpaTest`.
   - Integration tests run against real PostgreSQL, Kafka, Redis and Keycloak containers. There is no H2 and no embedded Kafka.
