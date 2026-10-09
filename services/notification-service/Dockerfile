@@ -17,4 +17,7 @@ COPY --from=build /build/target/notification-service-*.jar application.jar
 ADD --checksum=sha256:fe45bbebf92ad3e27a583bbb2ddd1553c521ed4d49af5514dc0a40372ea5395c --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /application/rds-global-bundle.pem
 USER 10001:10001
 EXPOSE 8084
+# Two malloc arenas keep native memory stable: with the default (eight per core) it varied by up to 60 MiB
+# between identical runs, enough to push a full heap past the container limit.
+ENV MALLOC_ARENA_MAX=2
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=45", "-XX:+ExitOnOutOfMemoryError", "-XX:MaxMetaspaceSize=224m", "-jar", "application.jar"]

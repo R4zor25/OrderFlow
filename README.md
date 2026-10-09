@@ -83,7 +83,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.yaml up --build -d 
 
 Compose starts the four applications together with PostgreSQL, Redis, Kafka, Kafka UI, Mailpit and Keycloak.
 - **Ports:** every published port binds to `127.0.0.1`.
-- **Container sizing:** applications get the same memory limits as on ECS (768 MiB for Spring, 512 MiB for notification). The JVM uses 45% of that limit as heap.
+- **Container sizing:** applications get the same memory limits as on ECS (768 MiB for Spring, 512 MiB for notification). The JVM uses 45% of that limit as heap, and two malloc arenas (`MALLOC_ARENA_MAX=2`) keep native memory stable between runs.
 
 | Address | What |
 |---|---|

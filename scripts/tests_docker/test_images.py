@@ -51,6 +51,8 @@ class ServiceImageTest(unittest.TestCase):
         self.images.append(image)
         info = json.loads(command('docker', 'image', 'inspect', image))[0]
         (self.output / (service + '-image.json')).write_text(json.dumps(info, indent=2))
+        # Two malloc arenas keep native memory from varying by tens of MiB between runs of the same workload.
+        self.assertIn('MALLOC_ARENA_MAX=2', info['Config']['Env'])
         if not self.infrastructure_started:
             type(self).infrastructure_started = True
             command(*self.compose, 'up', '-d', '--wait', '--wait-timeout', '120',
