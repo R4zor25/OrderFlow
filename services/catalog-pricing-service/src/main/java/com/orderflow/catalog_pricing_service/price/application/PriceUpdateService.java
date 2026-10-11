@@ -30,9 +30,8 @@ public class PriceUpdateService {
     @Transactional
     public void replace(String sku, String group, List<TierInput> tiers) {
         // The row lock serializes replacements of one product, so a second request deletes the first one's tiers.
-        if (products.findLockedBySku(sku).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found");
-        }
+        var product = products.findLockedBySku(sku)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found"));
         if (!prices.customerGroupExists(group)) {
             throw new UnknownCustomerGroupException(group);
         }
@@ -42,7 +41,7 @@ public class PriceUpdateService {
             .map(tier -> PriceListEntry.create(group, sku, tier.minQty(), tier.unitPriceNet(),
                 tier.validFrom(), tier.validTo()))
             .toList());
-        cache.replaced(group, sku, saved.stream().map(PriceListEntry::toTier).toList());
+        cache.replaced(group, sku, product.nextPriceVersion(), saved.stream().map(PriceListEntry::toTier).toList());
     }
 
     private void validate(List<TierInput> tiers) {

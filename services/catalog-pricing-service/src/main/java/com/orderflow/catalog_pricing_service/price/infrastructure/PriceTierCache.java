@@ -1,5 +1,6 @@
 package com.orderflow.catalog_pricing_service.price.infrastructure;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,18 +23,22 @@ import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
 public class PriceTierCache {
 
     public static final String CACHE_NAME = "price-tiers";
+    public static final Duration TIME_TO_LIVE = Duration.ofMinutes(10);
 
     private static final Logger log = LoggerFactory.getLogger(PriceTierCache.class);
 
     private final Cache cache;
     private final PriceListEntryRepository repository;
+    private final VersionedPriceTierWriter writer;
 
-    public PriceTierCache(CacheManager cacheManager, PriceListEntryRepository repository) {
+    public PriceTierCache(CacheManager cacheManager, PriceListEntryRepository repository,
+                          VersionedPriceTierWriter writer) {
         this.cache = cacheManager.getCache(CACHE_NAME);
         if (this.cache == null) {
             throw new IllegalStateException(CACHE_NAME + " cache is not configured");
         }
         this.repository = repository;
+        this.writer = writer;
     }
 
     public Map<String, List<PriceTier>> find(String group, Set<String> skus) {
@@ -58,6 +63,11 @@ public class PriceTierCache {
             }
         }
         if (!misses.isEmpty()) {
+            // Versions are read before the tiers, so a list is never labelled newer than the data it holds.
+            Map<String, Long> versions = new HashMap<>();
+            for (var version : repository.findPriceVersions(misses)) {
+                versions.put(version.getSku(), version.getPriceVersion());
+            }
             Map<String, List<PriceTier>> loaded = new HashMap<>();
             for (PriceListEntry entry : repository.findAllByCustomerGroupCodeAndSkuIn(group, misses)) {
                 loaded.computeIfAbsent(entry.getSku(), ignored -> new ArrayList<>()).add(entry.toTier());
@@ -66,31 +76,30 @@ public class PriceTierCache {
                 List<PriceTier> tiers = List.copyOf(loaded.getOrDefault(sku, List.of()));
                 result.put(sku, tiers);
                 if (cacheAvailable) {
-                    cacheAvailable = cacheLoaded(group, sku, tiers);
+                    cacheAvailable = cacheLoaded(group, sku, versions.getOrDefault(sku, 0L), tiers);
                 }
             }
         }
         return result;
     }
 
-    public void replaced(String group, String sku, List<PriceTier> tiers) {
+    public void replaced(String group, String sku, long version, List<PriceTier> tiers) {
         List<PriceTier> fresh = List.copyOf(tiers);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    refresh(group, sku, fresh);
+                    refresh(group, sku, version, fresh);
                 }
             });
         } else {
-            refresh(group, sku, fresh);
+            refresh(group, sku, version, fresh);
         }
     }
 
-    private boolean cacheLoaded(String group, String sku, List<PriceTier> tiers) {
+    private boolean cacheLoaded(String group, String sku, long version, List<PriceTier> tiers) {
         try {
-            // put-if-absent keeps a list that a price change wrote while this quote was reading old prices.
-            cache.putIfAbsent(key(group, sku), new CachedPriceTiers(tiers));
+            writer.write(group, sku, version, tiers);
             return true;
         } catch (RuntimeException failure) {
             log.warn("Price cache unavailable, reading from the database cause={}", failure.getClass().getSimpleName());
@@ -98,16 +107,16 @@ public class PriceTierCache {
         }
     }
 
-    private void refresh(String group, String sku, List<PriceTier> tiers) {
+    private void refresh(String group, String sku, long version, List<PriceTier> tiers) {
         try {
-            cache.put(key(group, sku), new CachedPriceTiers(tiers));
+            writer.write(group, sku, version, tiers);
         } catch (RuntimeException failure) {
             log.warn("Price cache not refreshed after a price change group={} sku={} cause={}",
                 group, sku, failure.getClass().getSimpleName());
         }
     }
 
-    private String key(String group, String sku) {
+    static String key(String group, String sku) {
         return group + ":" + sku;
     }
 }

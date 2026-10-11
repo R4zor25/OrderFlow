@@ -9,9 +9,12 @@ import com.orderflow.catalog_pricing_service.price.domain.PriceListEntry;
 import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
 import com.orderflow.catalog_pricing_service.price.infrastructure.CachedPriceTiers;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository.PriceVersion;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
+import com.orderflow.catalog_pricing_service.price.infrastructure.VersionedPriceTierWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
@@ -22,8 +25,13 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +39,7 @@ import static org.mockito.Mockito.when;
 class PriceTierCacheTest {
 
     private final PriceListEntryRepository repository = mock(PriceListEntryRepository.class);
+    private final VersionedPriceTierWriter writer = mock(VersionedPriceTierWriter.class);
 
     @AfterEach
     void clearSynchronization() {
@@ -40,58 +49,84 @@ class PriceTierCacheTest {
     }
 
     @Test
-    void writesTheNewListImmediatelyOutsideATransaction() {
-        var manager = new ConcurrentMapCacheManager("price-tiers");
+    void writesTheNewListWithItsVersionImmediatelyOutsideATransaction() {
+        var cache = new PriceTierCache(new ConcurrentMapCacheManager("price-tiers"), repository, writer);
 
-        new PriceTierCache(manager, repository).replaced("B2B_GOLD", "CHAIR-001", List.of(tier("70.00")));
+        cache.replaced("B2B_GOLD", "CHAIR-001", 3, List.of(tier("70.00")));
 
-        assertThat(manager.getCache("price-tiers").get("B2B_GOLD:CHAIR-001", CachedPriceTiers.class).tiers())
-            .extracting(PriceTier::unitPriceNet).containsExactly(new BigDecimal("70.00"));
+        verify(writer).write("B2B_GOLD", "CHAIR-001", 3, List.of(tier("70.00")));
     }
 
     @Test
-    void priceChangeDuringALoadIsNotOverwrittenByTheLoadedOldList() {
-        var manager = new ConcurrentMapCacheManager("price-tiers");
-        var cache = new PriceTierCache(manager, repository);
-        // The price change commits while this quote is reading the old tiers from the database.
-        when(repository.findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection())).thenAnswer(invocation -> {
-            cache.replaced("B2B_GOLD", "CHAIR-001", List.of(tier("70.00")));
-            return List.of(entry("84.90"));
-        });
+    void loaderWritesTheVersionItReadBeforeTheTiers() {
+        when(repository.findPriceVersions(anyCollection())).thenReturn(List.of(version("CHAIR-001", 5)));
+        when(repository.findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection()))
+            .thenReturn(List.of(entry("84.90")));
 
-        cache.find("B2B_GOLD", Set.of("CHAIR-001"));
+        new PriceTierCache(new ConcurrentMapCacheManager("price-tiers"), repository, writer)
+            .find("B2B_GOLD", Set.of("CHAIR-001"));
 
-        assertThat(manager.getCache("price-tiers").get("B2B_GOLD:CHAIR-001", CachedPriceTiers.class).tiers())
-            .extracting(PriceTier::unitPriceNet).containsExactly(new BigDecimal("70.00"));
+        InOrder order = inOrder(repository, writer);
+        order.verify(repository).findPriceVersions(anyCollection());
+        order.verify(repository).findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection());
+        order.verify(writer).write(eq("B2B_GOLD"), eq("CHAIR-001"), eq(5L), anyList());
     }
 
     @Test
     void readsFromTheDatabaseWhenTheCacheFails() {
         var failing = mock(Cache.class);
-        when(failing.get(any(), eq(CachedPriceTiers.class))).thenThrow(new RedisConnectionFailureException("down"));
-        when(failing.putIfAbsent(any(), any())).thenThrow(new RedisConnectionFailureException("down"));
+        when(failing.get(any(), eq(CachedPriceTiers.class)))
+            .thenThrow(new RedisConnectionFailureException("down"));
         var manager = mock(CacheManager.class);
         when(manager.getCache("price-tiers")).thenReturn(failing);
         when(repository.findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection()))
             .thenReturn(List.of(entry("84.90"), entry("CHAIR-002", "50.00")));
 
-        var loaded = new PriceTierCache(manager, repository).find("B2B_GOLD", Set.of("CHAIR-001", "CHAIR-002"));
+        var loaded = new PriceTierCache(manager, repository, writer).find("B2B_GOLD", Set.of("CHAIR-001", "CHAIR-002"));
 
         assertThat(loaded).containsOnlyKeys("CHAIR-001", "CHAIR-002");
         verify(failing, times(1)).get(any(), eq(CachedPriceTiers.class));
+        verify(writer, never()).write(anyString(), anyString(), anyLong(), anyList());
+    }
+
+    @Test
+    void stopsWritingAfterTheFirstWriteFailure() {
+        when(repository.findAllByCustomerGroupCodeAndSkuIn(eq("B2B_GOLD"), anyCollection()))
+            .thenReturn(List.of(entry("84.90"), entry("CHAIR-002", "50.00")));
+        when(writer.write(anyString(), anyString(), anyLong(), anyList()))
+            .thenThrow(new RedisConnectionFailureException("down"));
+
+        var loaded = new PriceTierCache(new ConcurrentMapCacheManager("price-tiers"), repository, writer)
+            .find("B2B_GOLD", Set.of("CHAIR-001", "CHAIR-002"));
+
+        assertThat(loaded).containsOnlyKeys("CHAIR-001", "CHAIR-002");
+        verify(writer, times(1)).write(anyString(), anyString(), anyLong(), anyList());
     }
 
     @Test
     void doesNotRefreshTheCacheWhenThePriceChangeRollsBack() {
-        var manager = new ConcurrentMapCacheManager("price-tiers");
-        var cache = new PriceTierCache(manager, repository);
+        var cache = new PriceTierCache(new ConcurrentMapCacheManager("price-tiers"), repository, writer);
         TransactionSynchronizationManager.initSynchronization();
 
-        cache.replaced("B2B_GOLD", "CHAIR-001", List.of(tier("70.00")));
+        cache.replaced("B2B_GOLD", "CHAIR-001", 3, List.of(tier("70.00")));
         TransactionSynchronizationManager.getSynchronizations()
             .forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
 
-        assertThat(manager.getCache("price-tiers").get("B2B_GOLD:CHAIR-001")).isNull();
+        verify(writer, never()).write(anyString(), anyString(), anyLong(), anyList());
+    }
+
+    private static PriceVersion version(String sku, long value) {
+        return new PriceVersion() {
+            @Override
+            public String getSku() {
+                return sku;
+            }
+
+            @Override
+            public long getPriceVersion() {
+                return value;
+            }
+        };
     }
 
     private static PriceTier tier(String price) {

@@ -1,6 +1,5 @@
 package com.orderflow.catalog_pricing_service.price.config;
 
-import java.time.Duration;
 import java.util.Set;
 
 import org.springframework.cache.CacheManager;
@@ -24,7 +23,7 @@ public class PriceCacheConfiguration {
     CacheManager priceCacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
         var serializer = new JacksonJsonRedisSerializer<>(objectMapper, CachedPriceTiers.class);
         var defaults = RedisCacheConfiguration.defaultCacheConfig()
-            .entryTtl(Duration.ofMinutes(10))
+            .entryTtl(PriceTierCache.TIME_TO_LIVE)
             .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(serializer));
         // Statistics feed the cache.gets metric; Boot only binds caches that exist at startup.
         return RedisCacheManager.builder(connectionFactory)

@@ -40,6 +40,9 @@ public class Product {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "price_version", nullable = false)
+    private long priceVersion;
+
     protected Product() {
     }
 
@@ -93,5 +96,11 @@ public class Product {
 
     public boolean isActive() {
         return active;
+    }
+
+    // Called under the product row lock, so versions grow in commit order and the cache can reject older lists.
+    public long nextPriceVersion() {
+        priceVersion++;
+        return priceVersion;
     }
 }
