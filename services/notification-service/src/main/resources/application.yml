@@ -39,8 +39,9 @@ notification:
   delivery:
     retry-enabled: true
     retry-interval: 30s
-    # A lease must outlast a whole batch: 20 sends at about 15 s worst-case SMTP time (5 s connect, read and write timeouts).
-    lease: 6m
+    # Retries claim one notification at a time, so the lease covers one send: the 5 s connect timeout plus about
+    # seven SMTP replies of up to 5 s each, about 40 s (a 4.1 s-per-reply server measured 28.8 s).
+    lease: 2m
     initial-backoff: 30s
     max-backoff: 1h
     max-attempts: 10

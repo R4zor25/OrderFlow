@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import com.orderflow.notification.application.NotificationDelivery;
 import com.orderflow.notification.application.NotificationStore;
+import com.orderflow.notification.config.NotificationDeliverySettings;
 import com.orderflow.notification.application.NotificationProcessor;
 import com.orderflow.notification.config.NotificationSettings.Channel;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
@@ -43,6 +44,9 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
 
     @Inject
     NotificationStore store;
+
+    @Inject
+    NotificationDeliverySettings settings;
 
     @Inject
     NotificationProcessor processor;
@@ -108,7 +112,7 @@ class NotificationStoreIntegrationTest implements TestPropertyProvider {
         var attempts = new AtomicInteger();
         var processing = new NotificationProcessor(
                 new NotificationComposer(new NotificationSettings(Channel.LOG, "ops@orderflow.test")),
-                store, new NotificationDelivery(store, draft -> {
+                store, new NotificationDelivery(store, settings, draft -> {
                     attempts.incrementAndGet();
                     throw new IllegalStateException("Simulated delivery failure");
                 }, new SimpleMeterRegistry()));

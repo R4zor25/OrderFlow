@@ -1,5 +1,6 @@
 package com.orderflow.notification.application;
 
+import com.orderflow.notification.config.NotificationDeliverySettings;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.inject.Singleton;
@@ -16,9 +17,12 @@ public class NotificationDelivery {
     private final Counter sent;
     private final Counter retry;
     private final Counter failed;
+    private final int batchSize;
 
-    public NotificationDelivery(NotificationStore store, NotificationSender sender, MeterRegistry registry) {
+    public NotificationDelivery(NotificationStore store, NotificationDeliverySettings settings, NotificationSender sender,
+                                MeterRegistry registry) {
         this.store = store;
+        this.batchSize = settings.batchSize();
         this.sender = sender;
         this.sent = outcome(registry, "sent");
         this.retry = outcome(registry, "retry");
@@ -57,8 +61,15 @@ public class NotificationDelivery {
     }
 
     public int retryDue() {
-        var due = store.claimDue();
-        due.forEach(this::deliver);
-        return due.size();
+        int processed = 0;
+        while (processed < batchSize) {
+            var next = store.claimNext();
+            if (next.isEmpty()) {
+                break;
+            }
+            deliver(next.get());
+            processed++;
+        }
+        return processed;
     }
 }

@@ -3,7 +3,6 @@ package com.orderflow.notification.application;
 import com.orderflow.notification.config.NotificationDeliverySettings;
 import com.orderflow.notification.config.NotificationSettings.Channel;
 import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
-import com.orderflow.notification.infrastructure.persistence.NotificationRow;
 import jakarta.inject.Singleton;
 import jakarta.transaction.Transactional;
 
@@ -58,18 +57,18 @@ public class NotificationStore {
         return Optional.of(new DeliveryFailure(attempts, failed));
     }
 
+    // One row per claim: the lease then covers a single send, not a whole run of slow SMTP conversations.
     @Transactional
-    public List<NotificationDraft> claimDue() {
+    public Optional<NotificationDraft> claimNext() {
         Instant now = clock.instant();
-        var due = repository.findDueForUpdate(now, settings.batchSize());
+        var due = repository.findDueForUpdate(now, 1);
         if (due.isEmpty()) {
-            return List.of();
+            return Optional.empty();
         }
-        repository.extendLease(due.stream().map(NotificationRow::id).toList(), now.plus(settings.lease()));
-        return due.stream()
-                .map(row -> new NotificationDraft(row.eventId(), row.orderId(), row.type(), row.recipient(),
-                        row.subject(), row.body(), Channel.valueOf(row.channel())))
-                .toList();
+        var row = due.getFirst();
+        repository.extendLease(List.of(row.id()), now.plus(settings.lease()));
+        return Optional.of(new NotificationDraft(row.eventId(), row.orderId(), row.type(), row.recipient(),
+                row.subject(), row.body(), Channel.valueOf(row.channel())));
     }
 
     public record DeliveryFailure(int attempts, boolean failed) {

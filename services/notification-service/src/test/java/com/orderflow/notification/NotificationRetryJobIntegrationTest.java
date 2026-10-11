@@ -17,6 +17,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.DriverManager;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,7 +69,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
     void doesNotClaimRowsInsideTheirLease() throws Exception {
         var draft = pending();
 
-        assertThat(store.claimDue()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
+        assertThat(claimAll()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
         assertThat(status(draft.eventId())).isEqualTo("PENDING");
     }
 
@@ -76,8 +78,8 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         var draft = pending();
         makeDue(draft.eventId(), 0);
 
-        assertThat(store.claimDue()).anyMatch(claimed -> claimed.eventId().equals(draft.eventId()));
-        assertThat(store.claimDue()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
+        assertThat(claimAll()).anyMatch(claimed -> claimed.eventId().equals(draft.eventId()));
+        assertThat(claimAll()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
     }
 
     @Test
@@ -94,7 +96,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
                 lock.executeQuery().close();
             }
 
-            var claimed = store.claimDue();
+            var claimed = claimAll();
 
             assertThat(claimed).noneMatch(draft -> draft.eventId().equals(locked.eventId()));
             assertThat(claimed).anyMatch(draft -> draft.eventId().equals(free.eventId()));
@@ -107,7 +109,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         var draft = pending();
         makeDue(draft.eventId(), 2);
         var registry = new SimpleMeterRegistry();
-        var failing = new NotificationDelivery(store, ignored -> {
+        var failing = new NotificationDelivery(store, settings, ignored -> {
             throw new IllegalStateException("smtp down");
         }, registry);
         Instant before = Instant.now();
@@ -136,14 +138,14 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         var draft = pending();
         makeDue(draft.eventId(), settings.maxAttempts() - 1);
         var registry = new SimpleMeterRegistry();
-        var failing = new NotificationDelivery(store, ignored -> {
+        var failing = new NotificationDelivery(store, settings, ignored -> {
             throw new IllegalStateException("smtp down");
         }, registry);
 
         failing.retryDue();
 
         assertThat(status(draft.eventId())).isEqualTo("FAILED");
-        assertThat(store.claimDue()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
+        assertThat(claimAll()).noneMatch(claimed -> claimed.eventId().equals(draft.eventId()));
         assertThat(outcome(registry, "failed")).isEqualTo(1.0);
         assertThat(outcome(registry, "retry")).isZero();
     }
@@ -154,7 +156,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         makeDue(draft.eventId(), 1);
         var registry = new SimpleMeterRegistry();
 
-        new NotificationDelivery(store, ignored -> { }, registry).retryDue();
+        new NotificationDelivery(store, settings, ignored -> { }, registry).retryDue();
 
         assertThat(status(draft.eventId())).isEqualTo("SENT");
         assertThat(outcome(registry, "sent")).isEqualTo(1.0);
@@ -166,7 +168,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         store.markSent(draft.eventId());
         var registry = new SimpleMeterRegistry();
 
-        new NotificationDelivery(store, ignored -> {
+        new NotificationDelivery(store, settings, ignored -> {
             throw new IllegalStateException("smtp down");
         }, registry).deliver(draft);
 
@@ -229,6 +231,14 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
         store.recordFailure(draft.eventId(), "IllegalStateException: smtp down");
 
         assertThat(status(draft.eventId())).isEqualTo("FAILED");
+    }
+
+    private List<NotificationDraft> claimAll() {
+        var claimed = new ArrayList<NotificationDraft>();
+        for (var next = store.claimNext(); next.isPresent(); next = store.claimNext()) {
+            claimed.add(next.get());
+        }
+        return claimed;
     }
 
     private NotificationDraft pending() {
