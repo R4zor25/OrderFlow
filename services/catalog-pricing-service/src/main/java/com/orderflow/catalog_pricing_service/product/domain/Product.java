@@ -99,6 +99,7 @@ public class Product {
     }
 
     // Called under the product row lock, so versions grow in commit order and the cache can reject older lists.
+    // Any other code that updates a product must hold the same lock, or it could write back an older version.
     public long nextPriceVersion() {
         priceVersion++;
         return priceVersion;

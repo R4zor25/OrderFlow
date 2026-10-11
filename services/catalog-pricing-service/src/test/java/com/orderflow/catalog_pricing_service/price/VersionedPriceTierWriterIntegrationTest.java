@@ -58,6 +58,16 @@ class VersionedPriceTierWriterIntegrationTest {
             .containsExactly(new BigDecimal("70.00"));
     }
 
+    @Test
+    void readsAnEntryWrittenBeforeVersionsExistedAsVersionZero() {
+        redis.opsForValue().set("price-tiers::B2B_GOLD:WRITER-003", """
+            {"tiers":[{"group":"B2B_GOLD","sku":"WRITER-003","minQty":1,"unitPriceNet":80.00,
+            "validFrom":"2020-01-01","validTo":null}]}""");
+
+        assertThat(cached("WRITER-003").version()).isZero();
+        assertThat(writer.write("B2B_GOLD", "WRITER-003", 1, List.of(tier("WRITER-003", "70.00")))).isTrue();
+    }
+
     private CachedPriceTiers cached(String sku) {
         return caches.getCache(PriceTierCache.CACHE_NAME).get("B2B_GOLD:" + sku, CachedPriceTiers.class);
     }

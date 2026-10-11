@@ -89,6 +89,8 @@ class PriceCacheOrderingIntegrationTest {
 
         assertThat(jdbc.queryForObject("select unit_price_net from catalog.price_list_entry where sku = ?",
             BigDecimal.class, sku)).isEqualByComparingTo("70.00");
+        assertThat(jdbc.queryForObject("select price_version from catalog.product where sku = ?", Long.class, sku))
+            .isEqualTo(2L);
         assertThat(cachedPrices(sku)).containsExactly(new BigDecimal("70.00"));
     }
 
@@ -111,8 +113,9 @@ class PriceCacheOrderingIntegrationTest {
     }
 
     private List<BigDecimal> cachedPrices(String sku) {
-        return caches.getCache(PriceTierCache.CACHE_NAME).get("B2B_GOLD:" + sku, CachedPriceTiers.class).tiers()
-            .stream().map(PriceTier::unitPriceNet).toList();
+        var cached = caches.getCache(PriceTierCache.CACHE_NAME).get("B2B_GOLD:" + sku, CachedPriceTiers.class);
+        assertThat(cached).as("cached tiers of " + sku).isNotNull();
+        return cached.tiers().stream().map(PriceTier::unitPriceNet).toList();
     }
 
     private static TierInput tier(String price) {
