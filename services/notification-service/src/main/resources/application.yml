@@ -40,7 +40,8 @@ notification:
     retry-enabled: true
     retry-interval: 30s
     # Retries claim one notification at a time, so the lease covers one send: the 5 s connect timeout plus about
-    # seven SMTP replies of up to 5 s each, about 40 s (a 4.1 s-per-reply server measured 28.8 s).
+    # seven SMTP replies of up to 5 s each, about 40 s for a slow but well-behaved server (28.8 s measured).
+    # The timeouts apply per read, so a server trickling bytes could still stretch one send past the lease.
     lease: 2m
     initial-backoff: 30s
     max-backoff: 1h
