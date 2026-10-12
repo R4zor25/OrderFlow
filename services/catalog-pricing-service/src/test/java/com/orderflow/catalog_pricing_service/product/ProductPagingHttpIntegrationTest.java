@@ -28,9 +28,11 @@ class ProductPagingHttpIntegrationTest {
     private ProductQueryService queries;
 
     @Test
-    void acceptsTheLargestOffsetTheDatabaseQueryCanTake() throws Exception {
-        // 21 474 836 × 100 = 2 147 483 600, the last page start below Integer.MAX_VALUE.
+    void acceptsPageStartsUpToTheJpaOffsetLimit() throws Exception {
+        // 21 474 836 × 100 = 2 147 483 600, the last full-size page start below Integer.MAX_VALUE.
         assertThat(get("/api/v1/products?page=21474836&size=100").statusCode()).isEqualTo(200);
+        // 2 147 483 647 × 1 is exactly Integer.MAX_VALUE, the largest offset the query accepts.
+        assertThat(get("/api/v1/products?page=2147483647&size=1").statusCode()).isEqualTo(200);
     }
 
     @Test
@@ -47,7 +49,10 @@ class ProductPagingHttpIntegrationTest {
     void answersAnUnexpectedErrorOnAPublicEndpointWithServerErrorNotUnauthorized() throws Exception {
         doThrow(new IllegalStateException("unexpected")).when(queries).findBySku("BROKEN-001");
 
-        assertThat(get("/api/v1/products/BROKEN-001").statusCode()).isEqualTo(500);
+        var response = get("/api/v1/products/BROKEN-001");
+
+        assertThat(response.statusCode()).isEqualTo(500);
+        assertThat(response.body()).doesNotContain("unexpected");
     }
 
     private HttpResponse<String> get(String path) throws Exception {

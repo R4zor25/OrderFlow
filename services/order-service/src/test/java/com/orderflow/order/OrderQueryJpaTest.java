@@ -142,6 +142,8 @@ class OrderQueryJpaTest {
     void acceptsTheLargestOffsetAndRejectsTheNextPage() {
         // 21 474 836 × 100 = 2 147 483 600, the last page start below Integer.MAX_VALUE.
         assertThat(queries.list(OrderAccess.admin(), null, null, 21_474_836, 100).getContent()).isEmpty();
+        // Exactly Integer.MAX_VALUE is still a valid offset.
+        assertThat(queries.list(OrderAccess.admin(), null, null, Integer.MAX_VALUE, 1).getContent()).isEmpty();
         assertThatThrownBy(() -> queries.list(OrderAccess.admin(), null, null, 21_474_837, 100))
             .isInstanceOf(InvalidOrderException.class);
         assertThatThrownBy(() -> queries.list(OrderAccess.admin(), null, null, Integer.MAX_VALUE, 100))
