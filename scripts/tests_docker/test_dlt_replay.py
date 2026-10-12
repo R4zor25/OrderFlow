@@ -160,7 +160,9 @@ class DltReplayCommandTest(unittest.TestCase):
         self.assertFalse(self.produced.exists())
 
     def test_readsOnlyTheRequestedOffsetAndSendsSynchronously(self):
-        self.run_script(FAKE_STDOUT='Partition:0\\tOffset:0\\torder-1\\t{}\\n')
+        result = self.run_script(FAKE_STDOUT='Partition:0\\tOffset:0\\torder-1\\t{}\\n')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
         consumer, producer = self.calls()[0], self.calls()[1]
         self.assertIn('auto.offset.reset=none', consumer)

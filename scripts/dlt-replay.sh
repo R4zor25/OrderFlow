@@ -14,6 +14,9 @@ offset=$3
 [[ "$dlt" =~ ^(.+)\.(order-service|inventory-service|notification-service)\.DLT$ ]] || usage
 source_topic=${BASH_REMATCH[1]}
 [[ "$partition" =~ ^[0-9]+$ && "$offset" =~ ^[0-9]+$ ]] || usage
+# Kafka prints numbers without leading zeros; compare against the same form.
+partition=$((10#$partition))
+offset=$((10#$offset))
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 if [[ -n "${KAFKA_EXEC:-}" ]]; then
@@ -45,14 +48,17 @@ fi
 record=${line#"$expected_prefix"}
 # Anything but one keyed line (tool noise, a multi-line value) must not reach a business topic.
 if [[ "$line" != "$expected_prefix"* || -z "$record" || "$record" == *$'\n'* || "$record" != *$'\t'* ]]; then
-  echo "no single keyed record at $dlt partition $partition offset $offset" >&2
+  echo "no single keyed record at $dlt partition $partition offset $offset (the offset may have left the log; see below)" >&2
   cat "$errors" >&2
   exit 1
 fi
 # --sync makes a failed send end the producer with a non-zero status; the bounds match the services' relays.
-printf '%s\n' "$record" | "${kafka_exec[@]}" /opt/kafka/bin/kafka-console-producer.sh \
-  --bootstrap-server "$bootstrap" --topic "$source_topic" --sync \
-  --command-property acks=all --command-property max.block.ms=5000 \
-  --command-property request.timeout.ms=5000 --command-property delivery.timeout.ms=10000 \
-  --reader-property parse.key=true --reader-property key.separator=$'\t'
+if ! printf '%s\n' "$record" | "${kafka_exec[@]}" /opt/kafka/bin/kafka-console-producer.sh \
+    --bootstrap-server "$bootstrap" --topic "$source_topic" --sync \
+    --command-property acks=all --command-property max.block.ms=5000 \
+    --command-property request.timeout.ms=5000 --command-property delivery.timeout.ms=10000 \
+    --reader-property parse.key=true --reader-property key.separator=$'\t'; then
+  echo "sending to $source_topic failed; nothing was replayed" >&2
+  exit 1
+fi
 echo "replayed $dlt partition $partition offset $offset to $source_topic"
