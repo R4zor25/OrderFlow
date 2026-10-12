@@ -87,7 +87,7 @@ class StockResultServiceIntegrationTest {
         var order = orders.findById(orderId).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         assertThat(order.getUpdatedAt()).isEqualTo(DECIDED);
-        assertThat(order.getVersion()).isEqualTo(1);
+        assertThat(order.getVersion()).isEqualTo(1L);
         assertThat(processedCount(eventId)).isEqualTo(1);
         assertThat(outboxCount(orderId, "OrderConfirmed")).isEqualTo(1);
         EventEnvelope<OrderConfirmedPayload> message = readEvent(orderId, new TypeReference<>() {});

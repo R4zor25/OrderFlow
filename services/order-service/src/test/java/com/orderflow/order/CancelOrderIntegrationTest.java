@@ -83,7 +83,7 @@ class CancelOrderIntegrationTest {
         assertThat(result.updatedAt()).isEqualTo(CANCELLED);
         assertThat(result.lines()).hasSize(1);
         assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1);
+        assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1L);
         assertThatThrownBy(() -> cancellation.cancel(id, OrderAccess.admin()))
             .isInstanceOf(InvalidOrderStateException.class);
     }
@@ -180,7 +180,7 @@ class CancelOrderIntegrationTest {
         assertThatThrownBy(() -> transactions.executeWithoutResult(status -> orders.saveAndFlush(stale)))
             .isInstanceOfAny(OptimisticLockingFailureException.class, OptimisticLockException.class);
         assertThat(queries.get(id, OrderAccess.admin()).status()).isEqualTo(OrderStatus.CONFIRMED);
-        assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1);
+        assertThat(orders.findById(id).orElseThrow().getVersion()).isEqualTo(1L);
     }
 
     private UUID createOrder() {

@@ -57,9 +57,11 @@ public class Order {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    // Null until the first persist: with an assigned UUID, a null version is how Spring Data recognises a new
+    // order and calls persist instead of merge.
     @Version
     @Column(nullable = false)
-    private long version;
+    private Long version;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<OrderLine> lines = new ArrayList<>();
@@ -209,7 +211,7 @@ public class Order {
         return updatedAt;
     }
 
-    public long getVersion() {
+    public Long getVersion() {
         return version;
     }
 

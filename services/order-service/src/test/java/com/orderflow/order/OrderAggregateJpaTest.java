@@ -59,4 +59,16 @@ class OrderAggregateJpaTest {
         assertThat(loaded.getLines().getFirst().getOrder().getId()).isEqualTo(id);
         assertThat(loaded.getTotalGross()).isEqualByComparingTo("215.65");
     }
+
+    @Test
+    void savesANewOrderWithPersistRatherThanMerge() {
+        Customer customer = customers.findById(UUID.fromString("33333333-3333-4333-8333-333333333333"))
+            .orElseThrow();
+        Order order = Order.place(customer, List.of(
+            new Order.PricedLine("CHAIR-001", 1, new BigDecimal("84.90"))
+        ), new BigDecimal("22.92"), Instant.parse("2026-09-25T00:00:00Z"));
+
+        // persist manages the given instance; merge would return a managed copy after looking the row up.
+        assertThat(orders.saveAndFlush(order)).isSameAs(order);
+    }
 }

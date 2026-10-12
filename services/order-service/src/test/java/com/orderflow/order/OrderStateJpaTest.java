@@ -54,6 +54,6 @@ class OrderStateJpaTest {
         assertThat(loaded.getStatus()).isEqualTo(OrderStatus.REJECTED);
         assertThat(loaded.getRejectionReason()).isEqualTo("No stock");
         assertThat(loaded.getUpdatedAt()).isEqualTo(rejectedAt);
-        assertThat(loaded.getVersion()).isEqualTo(1);
+        assertThat(loaded.getVersion()).isEqualTo(1L);
     }
 }
