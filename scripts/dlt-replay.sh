@@ -26,20 +26,33 @@ bootstrap=${KAFKA_BOOTSTRAP:-localhost:9092}
 
 errors=$(mktemp)
 trap 'rm -f "$errors"' EXIT
-if ! record=$("${kafka_exec[@]}" /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$bootstrap" \
+# auto.offset.reset=none: an offset that is no longer in the log fails instead of jumping to the newest record.
+if ! line=$("${kafka_exec[@]}" /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$bootstrap" \
     --topic "$dlt" --partition "$partition" --offset "$offset" --max-messages 1 --timeout-ms 10000 \
-    --formatter-property print.key=true --formatter-property key.separator=$'\t' 2> "$errors"); then
+    --command-property auto.offset.reset=none --formatter-property print.partition=true \
+    --formatter-property print.offset=true --formatter-property print.key=true \
+    --formatter-property key.separator=$'\t' 2> "$errors"); then
   echo "reading $dlt partition $partition offset $offset failed:" >&2
   cat "$errors" >&2
   exit 1
 fi
+# Only the requested record may be replayed; the consumer prints where the record it read came from.
+expected_prefix=$'Partition:'"$partition"$'\tOffset:'"$offset"$'\t'
+if [[ "$line" =~ ^Partition:([0-9]+)$'\t'Offset:([0-9]+)$'\t' && "$line" != "$expected_prefix"* ]]; then
+  echo "read partition ${BASH_REMATCH[1]} offset ${BASH_REMATCH[2]} instead of partition $partition offset $offset" >&2
+  exit 1
+fi
+record=${line#"$expected_prefix"}
 # Anything but one keyed line (tool noise, a multi-line value) must not reach a business topic.
-if [[ -z "$record" || "$record" == *$'\n'* || "$record" != *$'\t'* ]]; then
+if [[ "$line" != "$expected_prefix"* || -z "$record" || "$record" == *$'\n'* || "$record" != *$'\t'* ]]; then
   echo "no single keyed record at $dlt partition $partition offset $offset" >&2
   cat "$errors" >&2
   exit 1
 fi
+# --sync makes a failed send end the producer with a non-zero status; the bounds match the services' relays.
 printf '%s\n' "$record" | "${kafka_exec[@]}" /opt/kafka/bin/kafka-console-producer.sh \
-  --bootstrap-server "$bootstrap" --topic "$source_topic" \
+  --bootstrap-server "$bootstrap" --topic "$source_topic" --sync \
+  --command-property acks=all --command-property max.block.ms=5000 \
+  --command-property request.timeout.ms=5000 --command-property delivery.timeout.ms=10000 \
   --reader-property parse.key=true --reader-property key.separator=$'\t'
 echo "replayed $dlt partition $partition offset $offset to $source_topic"

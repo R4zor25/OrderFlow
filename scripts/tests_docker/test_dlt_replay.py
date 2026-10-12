@@ -61,6 +61,30 @@ class DltReplayTest(unittest.TestCase):
                           '--formatter-property', 'key.separator=\t', check=False).stdout
         self.assertEqual(replayed.strip().splitlines(), ['order-2\t{"eventType":"OrderPlaced","n":2}'])
 
+    def test_failsWithoutClaimingSuccessWhenTheSourceTopicCannotTakeTheRecord(self):
+        docker('exec', self.broker, KAFKA + 'kafka-topics.sh', '--bootstrap-server', 'localhost:9092',
+               '--delete', '--topic', SOURCE)
+        self.produce('order-1\t{"eventType":"OrderPlaced","n":1}')
+
+        result = self.replay(DLT, '0', '0')
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('replayed', result.stdout)
+
+    def test_refusesAnOffsetThatIsNoLongerInTheLog(self):
+        self.produce('order-1\t{"eventType":"OrderPlaced","n":1}')
+        self.produce('order-2\t{"eventType":"OrderPlaced","n":2}')
+        docker('exec', self.broker, 'sh', '-c', "printf '%s' '{\"partitions\":[{\"topic\":\"" + DLT
+               + "\",\"partition\":0,\"offset\":1}],\"version\":1}' > /tmp/delete.json && "
+               + KAFKA + 'kafka-delete-records.sh --bootstrap-server localhost:9092 --offset-json-file /tmp/delete.json')
+
+        result = self.replay(DLT, '0', '0')
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(docker('exec', self.broker, KAFKA + 'kafka-console-consumer.sh', '--bootstrap-server',
+                                'localhost:9092', '--topic', SOURCE, '--from-beginning', '--timeout-ms', '5000',
+                                check=False).stdout.strip(), '')
+
     def test_rejectsInvalidArguments(self):
         self.assertEqual(self.replay().returncode, 2)
         self.assertEqual(self.replay(SOURCE, '0', '0').returncode, 2)
@@ -108,7 +132,7 @@ class DltReplayCommandTest(unittest.TestCase):
         return [line.split('\0')[:-1] for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
     def test_defaultComposeCommandKeepsAPathWithSpacesInOneArgument(self):
-        result = self.run_script(FAKE_STDOUT='order-1\\t{}\\n')
+        result = self.run_script(FAKE_STDOUT='Partition:0\\tOffset:0\\torder-1\\t{}\\n')
 
         self.assertEqual(result.returncode, 0, result.stderr)
         consumer = self.calls()[0]
@@ -123,7 +147,23 @@ class DltReplayCommandTest(unittest.TestCase):
         self.assertFalse(self.produced.exists())
 
     def test_refusesOutputThatIsNotExactlyOneKeyedRecord(self):
-        result = self.run_script(FAKE_STDOUT='order-1\\t{\\nbroken}\\n')
+        result = self.run_script(FAKE_STDOUT='Partition:0\\tOffset:0\\torder-1\\t{\\nbroken}\\n')
 
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.produced.exists())
+
+    def test_refusesARecordFromAnotherOffset(self):
+        result = self.run_script(FAKE_STDOUT='Partition:0\\tOffset:7\\torder-9\\t{}\\n')
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('offset 7', result.stderr)
+        self.assertFalse(self.produced.exists())
+
+    def test_readsOnlyTheRequestedOffsetAndSendsSynchronously(self):
+        self.run_script(FAKE_STDOUT='Partition:0\\tOffset:0\\torder-1\\t{}\\n')
+
+        consumer, producer = self.calls()[0], self.calls()[1]
+        self.assertIn('auto.offset.reset=none', consumer)
+        self.assertIn('print.offset=true', consumer)
+        self.assertIn('--sync', producer)
+        self.assertIn('acks=all', producer)

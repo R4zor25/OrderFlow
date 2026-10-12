@@ -304,7 +304,10 @@ Behavior tests fake external CLI responses without cloud access; workflow contra
 republishes its key and value to the source topic. Every consumer group receives it again; deduplication makes
 that safe within 14 days of the original publish (check the record timestamp). Inspect the record and its
 `kafka_dlt-*` headers in Kafka UI first, fix the cause, then replay. Only one keyed, single-line record is
-replayed; headers (including the trace context) are not. `<topic>.DLT` topics from earlier versions stay
+replayed; headers (including the trace context) are not. The script replays only the record at exactly the
+requested partition and offset: an offset that has left the log (retention or deleted records) fails instead of
+picking up a newer record. It sends synchronously with `acks=all` and prints `replayed …` only after the broker
+acknowledged the record; a failed send ends the script with a non-zero status. `<topic>.DLT` topics from earlier versions stay
 readable in Kafka UI but are no longer written and cannot be replayed with this script. Set `KAFKA_EXEC` to run
 the Kafka tools through another command than `docker compose -f infra/docker-compose.yaml exec -T kafka`; it is
 split on whitespace, so it cannot contain quoted arguments.
