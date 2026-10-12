@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 
 import com.orderflow.order.application.OrderQueryService;
 import com.orderflow.order.domain.Customer;
+import com.orderflow.order.domain.InvalidOrderException;
 import com.orderflow.order.domain.Order;
 import com.orderflow.order.domain.OrderNotFoundException;
 import com.orderflow.order.domain.OrderStatus;
@@ -135,6 +136,16 @@ class OrderQueryJpaTest {
 
     private static List<UUID> ids(Page<OrderDetails> page) {
         return page.getContent().stream().map(item -> item.id()).toList();
+    }
+
+    @Test
+    void acceptsTheLargestOffsetAndRejectsTheNextPage() {
+        // 21 474 836 × 100 = 2 147 483 600, the last page start below Integer.MAX_VALUE.
+        assertThat(queries.list(OrderAccess.admin(), null, null, 21_474_836, 100).getContent()).isEmpty();
+        assertThatThrownBy(() -> queries.list(OrderAccess.admin(), null, null, 21_474_837, 100))
+            .isInstanceOf(InvalidOrderException.class);
+        assertThatThrownBy(() -> queries.list(OrderAccess.admin(), null, null, Integer.MAX_VALUE, 100))
+            .isInstanceOf(InvalidOrderException.class);
     }
 
     @Test

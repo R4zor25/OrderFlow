@@ -52,7 +52,12 @@ public class ProductController {
         if (page < 0 || size < 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page must be non-negative and size must be positive");
         }
-        var pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), Sort.by("sku").ascending());
+        int pageSize = Math.min(size, MAX_PAGE_SIZE);
+        // The database query takes an int offset; checked in long so the check itself cannot overflow.
+        if ((long) page * pageSize > Integer.MAX_VALUE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page × size must not exceed " + Integer.MAX_VALUE);
+        }
+        var pageable = PageRequest.of(page, pageSize, Sort.by("sku").ascending());
         return ProductPageResponse.from(queryService.list(category, pageable));
     }
 

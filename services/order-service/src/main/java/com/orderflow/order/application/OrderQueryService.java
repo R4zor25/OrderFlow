@@ -39,6 +39,10 @@ public class OrderQueryService {
         if (page < 0 || size < 1 || size > 100) {
             throw new InvalidOrderException("page must be non-negative and size must be between 1 and 100");
         }
+        // The database query takes an int offset; checked in long so the check itself cannot overflow.
+        if ((long) page * size > Integer.MAX_VALUE) {
+            throw new InvalidOrderException("page × size must not exceed " + Integer.MAX_VALUE);
+        }
         Page<UUID> ids = findPageIds(access.listFilter(customerId), status, PageRequest.of(page, size));
         if (ids.isEmpty()) {
             return new PageImpl<>(List.of(), ids.getPageable(), ids.getTotalElements());
