@@ -29,11 +29,12 @@ against a live account yet.
 | `runtime_enabled` | `false` | False: seven services with zero tasks; true: one task each |
 
 Every task uses Linux ARM64, Fargate platform 1.4.0 and `awsvpc`. Application,
-Kafka and Redis tasks have 512 CPU units and 1024 MiB; the Keycloak task has 1024
-CPU units and 2048 MiB (main container 512 CPU units, 1536 MiB). The main container has 256 CPU units (relative CPU shares), with hard
-memory limits of 768 MiB for Spring/Kafka, 512 MiB for notification and 384 MiB for
-Redis. Remaining task resources accommodate the managed Service Connect proxy;
-these are initial demo sizes, not production capacity measurements.
+Kafka and Redis tasks have 512 CPU units and 1024 MiB; their main container has
+256 CPU units (relative CPU shares) and a hard memory limit of 768 MiB for
+Spring/Kafka, 512 MiB for notification and 384 MiB for Redis. The Keycloak task
+has 1024 CPU units and 2048 MiB, with a 512 CPU unit, 1536 MiB main container.
+Remaining task resources accommodate the managed Service Connect proxy; these are
+initial demo sizes, not production capacity measurements.
 
 ## Network and routing
 
