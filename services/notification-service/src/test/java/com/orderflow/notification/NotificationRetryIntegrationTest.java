@@ -72,6 +72,7 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
 
     @Test
     void deadLettersExhaustedRecordOnceAndKeepsConsumingItsPartition() throws Exception {
+        awaitAllPartitionsAssigned();
         var key = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
         var sample = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
         var transientJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", transientId.toString());
@@ -100,6 +101,7 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
 
     @Test
     void sendsOverlongRecipientToDltWithoutRetrying() throws Exception {
+        awaitAllPartitionsAssigned();
         var sample = Files.readString(Path.of("../../contracts/events/order-confirmed.json"));
         var oversizedJson = sample.replace("cccccccc-cccc-4ccc-8ccc-cccccccccccc", oversizedId.toString())
                 .replace("standard@example.test", "a".repeat(308) + "@example.test");
@@ -111,6 +113,20 @@ class NotificationRetryIntegrationTest implements TestPropertyProvider {
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 assertThat(deadLetters()).contains(oversizedJson));
         assertThat(oversizedAttempts).hasValue(0);
+    }
+
+    // The attempt counts are exact only if no rebalance moves a partition mid-retry; a consumer thread that joins
+    // late would restart a record's retries on its new owner, so the test waits for all three to hold partitions.
+    private static void awaitAllPartitionsAssigned() {
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            try (var admin = AdminClient.create(Map.of("bootstrap.servers", kafka.getBootstrapServers()))) {
+                var group = admin.describeConsumerGroups(List.of("notification-service")).all().get()
+                        .get("notification-service");
+                assertThat(group.members()).hasSize(3);
+                assertThat(group.members().stream().mapToInt(member -> member.assignment().topicPartitions().size())
+                        .sum()).isEqualTo(6);
+            }
+        });
     }
 
     private List<String> deadLetters() {
