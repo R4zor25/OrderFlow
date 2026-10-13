@@ -302,7 +302,8 @@ Behavior tests fake external CLI responses without cloud access; workflow contra
 
 `scripts/dlt-replay.sh <topic>.<group>.DLT <partition> <offset>` reads one record from a dead-letter topic and
 republishes its key and value to the source topic. Every consumer group receives it again; deduplication makes
-that safe within 14 days of the original publish (check the record timestamp). Inspect the record and its
+that safe within 14 days of the original publish (check the record timestamp; notification-service DLT
+records carry the time of dead-lettering, so use the envelope `occurredAt` for them). Inspect the record and its
 `kafka_dlt-*` headers in Kafka UI first, fix the cause, then replay. Only one keyed, single-line record is
 replayed; headers (including the trace context) are not. The script replays only the record at exactly the
 requested partition and offset: an offset that has left the log (retention or deleted records) fails instead of

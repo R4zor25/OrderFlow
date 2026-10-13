@@ -2,8 +2,10 @@
 
 Terraform defines a temporary ARM64 ECS Fargate environment in `eu-central-1`.
 Local provider-schema and mock tests pass without AWS credentials. No live
-AWS plan/apply or cloud application traffic has been verified. GitHub OIDC and
-the deployment workflow are not implemented yet.
+AWS plan/apply or cloud application traffic has been verified. The GitHub OIDC
+trust and the manual release workflow are implemented and checked with local
+contract tests (see [DEPLOYMENT.md](../../docs/DEPLOYMENT.md)); they have not run
+against a live account yet.
 
 ## Resources
 
@@ -26,8 +28,9 @@ the deployment workflow are not implemented yet.
 | `image_tag` | Required | Full 40-character lowercase Git SHA; no `latest` |
 | `runtime_enabled` | `false` | False: seven services with zero tasks; true: one task each |
 
-Every task uses Linux ARM64, Fargate platform 1.4.0, `awsvpc`, 512 CPU units and
-1024 MiB. The main container has 256 CPU units (relative CPU shares), with hard
+Every task uses Linux ARM64, Fargate platform 1.4.0 and `awsvpc`. Application,
+Kafka and Redis tasks have 512 CPU units and 1024 MiB; the Keycloak task has 1024
+CPU units and 2048 MiB (main container 512 CPU units, 1536 MiB). The main container has 256 CPU units (relative CPU shares), with hard
 memory limits of 768 MiB for Spring/Kafka, 512 MiB for notification and 384 MiB for
 Redis. Remaining task resources accommodate the managed Service Connect proxy;
 these are initial demo sizes, not production capacity measurements.
@@ -61,8 +64,9 @@ Service Connect uses the original ports in client aliases and different
 to the original application ports. The namespace is a Cloud Map HTTP namespace,
 not a general DNS zone usable from the Mac.
 
-The inventory stock/reservation and notification inspection HTTP APIs are not
-implemented yet. Their ALB rules prepare routing; they do not create endpoints.
+The ALB forwards `/api/v1/stock`, `/api/v1/stock/*` and `/api/v1/reservations` to
+inventory and `/api/v1/notifications` to notification; these admin inspection
+endpoints require an `ADMIN` token.
 The existing catalog/order APIs keep their original paths; no rewriting occurs.
 
 ## Health and deployment
