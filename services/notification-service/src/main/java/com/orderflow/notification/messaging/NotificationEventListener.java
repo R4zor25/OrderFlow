@@ -30,10 +30,9 @@ public final class NotificationEventListener {
     private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
 
     private final NotificationEventDecoder decoder;
-    private final NotificationDeadLetterPublisher deadLetterPublisher;
+    private final DeadLetters deadLetters;
     private final NotificationProcessor processor;
     private final OpenTelemetry openTelemetry;
-    private final DeadLetterMetrics deadLetterMetrics;
 
     private static final TextMapGetter<ConsumerRecord<String, String>> HEADERS = new TextMapGetter<>() {
         @Override
@@ -51,14 +50,12 @@ public final class NotificationEventListener {
     };
 
     public NotificationEventListener(NotificationEventDecoder decoder,
-                                     NotificationDeadLetterPublisher deadLetterPublisher,
-                                     NotificationProcessor processor, OpenTelemetry openTelemetry,
-                                     DeadLetterMetrics deadLetterMetrics) {
+                                     DeadLetters deadLetters,
+                                     NotificationProcessor processor, OpenTelemetry openTelemetry) {
         this.decoder = decoder;
-        this.deadLetterPublisher = deadLetterPublisher;
+        this.deadLetters = deadLetters;
         this.processor = processor;
         this.openTelemetry = openTelemetry;
-        this.deadLetterMetrics = deadLetterMetrics;
     }
 
     @Topic({NotificationEventDecoder.ORDER_TOPIC, NotificationEventDecoder.STOCK_TOPIC})
@@ -95,9 +92,7 @@ public final class NotificationEventListener {
             NotificationEvent event = decoded.orElseThrow();
             processor.process(event);
         } catch (InvalidNotificationEventException invalid) {
-            deadLetterPublisher.publish(DeadLetterHeaders.topic(record.topic()), record.key(), record.value(),
-                    DeadLetterHeaders.of(record.topic(), record.partition(), record.offset(), invalid));
-            deadLetterMetrics.published(DeadLetterHeaders.topic(record.topic()));
+            deadLetters.send(record, record.key(), record.value(), invalid);
             log.warn("Invalid notification event moved to DLT at topic={}, partition={}, offset={}",
                     record.topic(), record.partition(), record.offset());
         }

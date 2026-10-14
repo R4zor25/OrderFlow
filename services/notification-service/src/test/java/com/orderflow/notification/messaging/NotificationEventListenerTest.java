@@ -27,10 +27,9 @@ class NotificationEventListenerTest {
 
     private final RecordingPublisher publisher = new RecordingPublisher();
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final DeadLetterMetrics deadLetterMetrics = new DeadLetterMetrics(registry);
+    private final DeadLetters deadLetters = new DeadLetters(publisher, registry);
     private final NotificationEventListener listener = new NotificationEventListener(
-            new NotificationEventDecoder(JsonMapper.createDefault()), publisher, null, OpenTelemetry.noop(),
-            deadLetterMetrics);
+            new NotificationEventDecoder(JsonMapper.createDefault()), deadLetters, null, OpenTelemetry.noop());
 
     @Test
     void ignoresUnknownEventWithoutDeadLettering() throws Exception {
@@ -62,7 +61,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("processing failed", new IllegalStateException("temporary"),
                 listener, null, failedRecord);
-        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
+        new NotificationListenerExceptionHandler(deadLetters).handle(failure);
         assertThat(publisher.sent).containsExactly(new Published(
                 NotificationEventDecoder.ORDER_TOPIC + ".notification-service.DLT", "order-123", "original-json",
                 Map.of("kafka_dlt-original-topic", NotificationEventDecoder.ORDER_TOPIC,
@@ -80,7 +79,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("processing failed", new IllegalStateException("x".repeat(1500)),
                 listener, null, record);
-        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
+        new NotificationListenerExceptionHandler(deadLetters).handle(failure);
         assertThat(publisher.sent.getFirst().headers().get("kafka_dlt-exception-message")).hasSize(1000);
     }
 
@@ -90,7 +89,7 @@ class NotificationEventListenerTest {
                 "order-123", "original-json");
         var failure = new KafkaListenerException("commit failed", new CommitFailedException("rebalance"),
                 listener, null, record);
-        new NotificationListenerExceptionHandler(publisher, deadLetterMetrics).handle(failure);
+        new NotificationListenerExceptionHandler(deadLetters).handle(failure);
         assertThat(publisher.sent).isEmpty();
     }
 
@@ -118,7 +117,8 @@ class NotificationEventListenerTest {
             throw new IllegalStateException("broker unavailable");
         };
 
-        assertThatCode(() -> new NotificationListenerExceptionHandler(failing, deadLetterMetrics).handle(failure))
+        assertThatCode(() -> new NotificationListenerExceptionHandler(new DeadLetters(failing, registry))
+                .handle(failure))
                 .doesNotThrowAnyException();
         assertThat(deadLetters(NotificationEventDecoder.ORDER_TOPIC)).isZero();
     }
