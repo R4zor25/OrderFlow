@@ -4,7 +4,6 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
-import java.util.TreeMap;
 import java.util.UUID;
 
 import io.micrometer.tracing.Tracer;
@@ -39,13 +38,9 @@ public class InventoryOutboxWriter {
         this.propagator = propagator;
     }
 
-    public void reserved(UUID orderId, List<ReservationLine> lines) {
-        var quantityBySku = new TreeMap<String, Integer>();
-        for (var line : lines) {
-            quantityBySku.merge(line.sku(), line.quantity(), Math::addExact);
-        }
-        var eventLines = quantityBySku.entrySet().stream()
-            .map(entry -> new StockReservedPayload.Line(entry.getKey(), entry.getValue()))
+    public void reserved(UUID orderId, List<ReservationLine> reservedLines) {
+        var eventLines = reservedLines.stream()
+            .map(line -> new StockReservedPayload.Line(line.sku(), line.quantity()))
             .toList();
         write("Order", orderId.toString(), "StockReserved", new StockReservedPayload(orderId, eventLines));
     }

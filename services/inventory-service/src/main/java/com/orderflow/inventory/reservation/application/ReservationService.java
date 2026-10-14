@@ -1,5 +1,6 @@
 package com.orderflow.inventory.reservation.application;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -21,7 +22,7 @@ public class ReservationService {
     }
 
     @Transactional
-    public void reserve(UUID orderId, List<ReservationLine> lines) {
+    public List<ReservationLine> reserve(UUID orderId, List<ReservationLine> lines) {
         Objects.requireNonNull(orderId, "orderId");
         Objects.requireNonNull(lines, "lines");
         if (lines.isEmpty()) {
@@ -34,6 +35,7 @@ public class ReservationService {
             quantityBySku.merge(line.sku(), line.quantity(), Math::addExact);
         }
 
+        var reserved = new ArrayList<ReservationLine>();
         for (var entry : quantityBySku.entrySet()) {
             String sku = entry.getKey();
             int quantity = entry.getValue();
@@ -41,6 +43,8 @@ public class ReservationService {
                 throw new StockUnavailableException(sku);
             }
             repository.insertReservation(orderId, sku, quantity);
+            reserved.add(new ReservationLine(sku, quantity));
         }
+        return List.copyOf(reserved);
     }
 }

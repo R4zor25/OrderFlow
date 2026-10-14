@@ -39,8 +39,7 @@ public class ReservationOutcomeService {
         if (!processedEvents.markIfNew(eventId) || cancelled(orderId)) {
             return;
         }
-        reservations.reserve(orderId, lines);
-        outbox.reserved(orderId, lines);
+        outbox.reserved(orderId, reservations.reserve(orderId, lines));
     }
 
     @Transactional
