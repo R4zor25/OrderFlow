@@ -9,7 +9,6 @@ import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
 import com.orderflow.inventory.reservation.domain.ReservationLine;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -74,14 +73,6 @@ class OrderPlacedProcessorTest {
             List.of(new OrderPlacedPayload.Line(" ", 1))));
 
         verify(outcomes).rejectInvalid(EVENT_ID, ORDER_ID, List.of());
-    }
-
-    @Test
-    void unidentifiableOrderIsNotProcessed() {
-        assertThatThrownBy(() -> processor.process(event(UUID.randomUUID().toString(), UUID.randomUUID(), "B2B",
-            List.of(new OrderPlacedPayload.Line("CHAIR-001", 1)))))
-            .isInstanceOf(IllegalArgumentException.class);
-        verify(outcomes, never()).rejectInvalid(any(), any(), anyList());
     }
 
     private static EventEnvelope<OrderPlacedPayload> event(String aggregateId, UUID customerId, String customerType,

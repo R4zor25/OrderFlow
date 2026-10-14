@@ -1,9 +1,10 @@
 package com.orderflow.inventory.infrastructure.events;
 
 import java.util.Set;
+import java.util.UUID;
 
 import com.orderflow.inventory.application.OrderPlacedProcessor;
-import com.orderflow.inventory.application.OrderCancelledProcessor;
+import com.orderflow.inventory.application.OrderCancellationService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -23,13 +24,13 @@ public class OrderEventListener {
 
     private final ObjectMapper json;
     private final OrderPlacedProcessor placed;
-    private final OrderCancelledProcessor cancelled;
+    private final OrderCancellationService cancellation;
 
     public OrderEventListener(ObjectMapper json, OrderPlacedProcessor placed,
-                              OrderCancelledProcessor cancelled) {
+                              OrderCancellationService cancellation) {
         this.json = json;
         this.placed = placed;
-        this.cancelled = cancelled;
+        this.cancellation = cancellation;
     }
 
     @KafkaListener(topics = "orders.order-events.v1")
@@ -50,24 +51,27 @@ public class OrderEventListener {
             case "OrderPlaced" -> {
                 EventEnvelope<OrderPlacedPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
-                validateKey(record, event);
+                validateIdentity(record, event, event.payload().orderId());
                 log.info("Processing OrderPlaced eventId={} orderId={}", event.eventId(), event.aggregateId());
                 placed.process(event);
             }
             case "OrderCancelled" -> {
                 EventEnvelope<OrderCancelledPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
-                validateKey(record, event);
-                log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), event.aggregateId());
-                cancelled.process(event);
+                UUID orderId = event.payload().orderId();
+                validateIdentity(record, event, orderId);
+                log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), orderId);
+                cancellation.release(event.eventId(), orderId);
             }
             default -> { }
         }
     }
 
-    private static void validateKey(ConsumerRecord<String, String> record, EventEnvelope<?> event) {
-        if (!event.aggregateId().equals(record.key())) {
-            throw new IllegalArgumentException("Kafka key does not match order aggregate ID");
+    private static void validateIdentity(ConsumerRecord<String, String> record, EventEnvelope<?> event,
+                                         UUID orderId) {
+        if (orderId == null || !orderId.toString().equals(event.aggregateId())
+            || !event.aggregateId().equals(record.key())) {
+            throw new IllegalArgumentException("Order ID, aggregate ID and Kafka key must match");
         }
     }
 }

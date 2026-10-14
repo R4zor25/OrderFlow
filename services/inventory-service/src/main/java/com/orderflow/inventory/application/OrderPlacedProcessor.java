@@ -3,7 +3,6 @@ package com.orderflow.inventory.application;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 import com.orderflow.inventory.infrastructure.events.EventEnvelope;
@@ -24,12 +23,7 @@ public class OrderPlacedProcessor {
     }
 
     public void process(EventEnvelope<OrderPlacedPayload> event) {
-        Objects.requireNonNull(event, "event");
         var payload = event.payload();
-        if (!"OrderPlaced".equals(event.eventType()) || event.eventVersion() != 1 || payload == null
-            || payload.orderId() == null || !event.aggregateId().equals(payload.orderId().toString())) {
-            throw new IllegalArgumentException("Unidentifiable OrderPlaced event");
-        }
         var invalidSkus = invalidSkus(payload);
         if (invalidSkus.isPresent()) {
             // An identifiable order gets a business answer; a dead letter would leave it pending.
