@@ -3,6 +3,7 @@ package com.orderflow.order.application;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.orderflow.order.domain.Customer;
@@ -50,35 +51,38 @@ public class PlaceOrderService {
     }
 
     private List<Order.PricedLine> verifiedLines(PlaceOrderCommand command, Customer customer, QuoteResponse quote) {
-        if (quote == null || !customer.getCustomerGroupCode().equals(quote.customerGroup())
-            || !"EUR".equals(quote.currency()) || quote.lines() == null
-            || quote.lines().size() != command.lines().size()
-            || !validMoney(quote.totalNet()) || !validMoney(quote.totalVat())
-            || !validMoney(quote.totalGross())
-            || quote.totalGross().compareTo(quote.totalNet().add(quote.totalVat())) != 0) {
+        if (!quoteMatches(quote, customer, command.lines().size())) {
             throw invalidQuote();
         }
+        List<Order.PricedLine> pricedLines = new ArrayList<>();
+        BigDecimal summedNet = BigDecimal.ZERO;
         for (int index = 0; index < command.lines().size(); index++) {
-            PlaceOrderCommand.Line requested = command.lines().get(index);
             QuoteLineResponse priced = quote.lines().get(index);
-            if (requested == null || priced == null || requested.sku() == null
-                || requested.sku().isBlank() || requested.quantity() <= 0
-                || !requested.sku().equals(priced.sku()) || requested.quantity() != priced.quantity()
-                || !validMoney(priced.unitPriceNet()) || !validMoney(priced.lineTotalNet())
-                || priced.lineTotalNet().compareTo(priced.unitPriceNet()
-                    .multiply(BigDecimal.valueOf(priced.quantity()))) != 0) {
+            if (!lineMatches(command.lines().get(index), priced)) {
                 throw invalidQuote();
             }
+            summedNet = summedNet.add(priced.lineTotalNet());
+            pricedLines.add(new Order.PricedLine(priced.sku(), priced.quantity(), priced.unitPriceNet()));
         }
-        BigDecimal summedNet = quote.lines().stream()
-            .map(QuoteLineResponse::lineTotalNet)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
         if (summedNet.compareTo(quote.totalNet()) != 0) {
             throw invalidQuote();
         }
-        return quote.lines().stream()
-            .map(line -> new Order.PricedLine(line.sku(), line.quantity(), line.unitPriceNet()))
-            .toList();
+        return List.copyOf(pricedLines);
+    }
+
+    private static boolean quoteMatches(QuoteResponse quote, Customer customer, int lineCount) {
+        return quote != null && customer.getCustomerGroupCode().equals(quote.customerGroup())
+            && "EUR".equals(quote.currency()) && quote.lines() != null && quote.lines().size() == lineCount
+            && validMoney(quote.totalNet()) && validMoney(quote.totalVat()) && validMoney(quote.totalGross())
+            && quote.totalGross().compareTo(quote.totalNet().add(quote.totalVat())) == 0;
+    }
+
+    private static boolean lineMatches(PlaceOrderCommand.Line requested, QuoteLineResponse priced) {
+        return requested != null && priced != null && requested.sku() != null && !requested.sku().isBlank()
+            && requested.quantity() > 0 && requested.sku().equals(priced.sku())
+            && requested.quantity() == priced.quantity()
+            && validMoney(priced.unitPriceNet()) && validMoney(priced.lineTotalNet())
+            && priced.lineTotalNet().compareTo(priced.unitPriceNet().multiply(BigDecimal.valueOf(priced.quantity()))) == 0;
     }
 
     private static boolean validMoney(BigDecimal amount) {
