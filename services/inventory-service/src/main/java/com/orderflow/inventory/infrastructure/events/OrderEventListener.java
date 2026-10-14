@@ -51,27 +51,33 @@ public class OrderEventListener {
             case "OrderPlaced" -> {
                 EventEnvelope<OrderPlacedPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
-                validateIdentity(record, event, event.payload().orderId());
+                validateKey(record, event);
                 log.info("Processing OrderPlaced eventId={} orderId={}", event.eventId(), event.aggregateId());
+                requireOrderId(event, event.payload().orderId(), "Unidentifiable OrderPlaced event");
                 placed.process(event);
             }
             case "OrderCancelled" -> {
                 EventEnvelope<OrderCancelledPayload> event = json.readValue(
                     record.value(), new TypeReference<>() {});
+                validateKey(record, event);
+                log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), event.aggregateId());
                 UUID orderId = event.payload().orderId();
-                validateIdentity(record, event, orderId);
-                log.info("Processing OrderCancelled eventId={} orderId={}", event.eventId(), orderId);
+                requireOrderId(event, orderId, "Invalid OrderCancelled event");
                 cancellation.release(event.eventId(), orderId);
             }
             default -> { }
         }
     }
 
-    private static void validateIdentity(ConsumerRecord<String, String> record, EventEnvelope<?> event,
-                                         UUID orderId) {
-        if (orderId == null || !orderId.toString().equals(event.aggregateId())
-            || !event.aggregateId().equals(record.key())) {
-            throw new IllegalArgumentException("Order ID, aggregate ID and Kafka key must match");
+    private static void validateKey(ConsumerRecord<String, String> record, EventEnvelope<?> event) {
+        if (!event.aggregateId().equals(record.key())) {
+            throw new IllegalArgumentException("Kafka key does not match order aggregate ID");
+        }
+    }
+
+    private static void requireOrderId(EventEnvelope<?> event, UUID orderId, String message) {
+        if (orderId == null || !orderId.toString().equals(event.aggregateId())) {
+            throw new IllegalArgumentException(message);
         }
     }
 }

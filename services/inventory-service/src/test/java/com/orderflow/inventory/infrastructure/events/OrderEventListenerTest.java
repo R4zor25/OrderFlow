@@ -1,11 +1,12 @@
 package com.orderflow.inventory.infrastructure.events;
 
+import java.util.List;
+import java.util.UUID;
+
 import com.orderflow.inventory.application.OrderCancellationService;
 import com.orderflow.inventory.application.OrderPlacedProcessor;
 import com.orderflow.inventory.application.ReservationOutcomeService;
 import com.orderflow.inventory.reservation.domain.ReservationLine;
-import java.util.List;
-import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import tools.jackson.core.JacksonException;
@@ -80,8 +81,7 @@ class OrderEventListenerTest {
 
     @Test
     void releasesCancelledOrderWithOnlyItsOrderId() {
-        listener.onMessage(record(ORDER_ID,
-            envelope("OrderCancelled", ORDER_ID, CANCELLED_PAYLOAD.formatted(ORDER_ID))));
+        listener.onMessage(record(ORDER_ID, envelope("OrderCancelled", ORDER_ID, "{\"orderId\":\"" + ORDER_ID + "\"}")));
 
         verify(cancellation).release(EVENT_ID, UUID.fromString(ORDER_ID));
     }
@@ -91,8 +91,10 @@ class OrderEventListenerTest {
         var placed = record(ORDER_ID, envelope("OrderPlaced", ORDER_ID, PLACED_PAYLOAD.formatted(OTHER_ID)));
         var cancelled = record(ORDER_ID, envelope("OrderCancelled", ORDER_ID, CANCELLED_PAYLOAD.formatted(OTHER_ID)));
 
-        assertThatThrownBy(() -> listener.onMessage(placed)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> listener.onMessage(cancelled)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> listener.onMessage(placed))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Unidentifiable OrderPlaced event");
+        assertThatThrownBy(() -> listener.onMessage(cancelled))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Invalid OrderCancelled event");
         verifyNoInteractions(outcomes, cancellation);
     }
 
@@ -103,8 +105,10 @@ class OrderEventListenerTest {
         var cancelled = record(ORDER_ID, envelope("OrderCancelled", ORDER_ID,
             CANCELLED_PAYLOAD.formatted(ORDER_ID).replace("\"orderId\":\"" + ORDER_ID + "\",", "")));
 
-        assertThatThrownBy(() -> listener.onMessage(placed)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> listener.onMessage(cancelled)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> listener.onMessage(placed))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Unidentifiable OrderPlaced event");
+        assertThatThrownBy(() -> listener.onMessage(cancelled))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Invalid OrderCancelled event");
         verifyNoInteractions(outcomes, cancellation);
     }
 
@@ -113,8 +117,10 @@ class OrderEventListenerTest {
         var placed = record(OTHER_ID, envelope("OrderPlaced", ORDER_ID, PLACED_PAYLOAD.formatted(ORDER_ID)));
         var cancelled = record(OTHER_ID, envelope("OrderCancelled", ORDER_ID, CANCELLED_PAYLOAD.formatted(ORDER_ID)));
 
-        assertThatThrownBy(() -> listener.onMessage(placed)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> listener.onMessage(cancelled)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> listener.onMessage(placed))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Kafka key does not match order aggregate ID");
+        assertThatThrownBy(() -> listener.onMessage(cancelled))
+            .isInstanceOf(IllegalArgumentException.class).hasMessage("Kafka key does not match order aggregate ID");
         verifyNoInteractions(outcomes, cancellation);
     }
 
