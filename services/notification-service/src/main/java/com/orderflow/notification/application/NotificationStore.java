@@ -8,7 +8,6 @@ import jakarta.transaction.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,14 +60,11 @@ public class NotificationStore {
     @Transactional
     public Optional<NotificationDraft> claimNext() {
         Instant now = clock.instant();
-        var due = repository.findDueForUpdate(now, 1);
-        if (due.isEmpty()) {
-            return Optional.empty();
-        }
-        var row = due.getFirst();
-        repository.extendLease(List.of(row.id()), now.plus(settings.lease()));
-        return Optional.of(new NotificationDraft(row.eventId(), row.orderId(), row.type(), row.recipient(),
-                row.subject(), row.body(), Channel.valueOf(row.channel())));
+        return repository.findNextDueForUpdate(now).map(row -> {
+            repository.extendLease(row.id(), now.plus(settings.lease()));
+            return new NotificationDraft(row.eventId(), row.orderId(), row.type(), row.recipient(),
+                    row.subject(), row.body(), Channel.valueOf(row.channel()));
+        });
     }
 
     public record DeliveryFailure(int attempts, boolean failed) {

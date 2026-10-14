@@ -51,15 +51,15 @@ public interface NotificationRepository extends CrudRepository<NotificationRow, 
             SELECT * FROM notifications.notification
             WHERE status = 'PENDING' AND next_attempt_at <= :now
             ORDER BY next_attempt_at
-            LIMIT :limit
+            LIMIT 1
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<NotificationRow> findDueForUpdate(Instant now, int limit);
+    Optional<NotificationRow> findNextDueForUpdate(Instant now);
 
     @Query(value = """
-            UPDATE notifications.notification SET next_attempt_at = :leaseUntil WHERE id IN (:ids)
+            UPDATE notifications.notification SET next_attempt_at = :leaseUntil WHERE id = :id
             """, nativeQuery = true)
-    int extendLease(List<UUID> ids, Instant leaseUntil);
+    int extendLease(UUID id, Instant leaseUntil);
 
     @Query(value = """
             DELETE FROM notifications.notification WHERE id IN (
