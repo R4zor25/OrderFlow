@@ -85,7 +85,6 @@ public class Order {
         this.currency = "EUR";
         this.totalNet = new BigDecimal("0.00");
         this.totalVat = totalVat;
-        this.totalGross = totalVat;
         this.createdAt = now;
         this.updatedAt = now;
     }
@@ -101,6 +100,7 @@ public class Order {
         for (PricedLine line : pricedLines) {
             order.addLine(line);
         }
+        order.totalGross = order.totalNet.add(order.totalVat);
         if (order.totalNet.compareTo(MAX_AMOUNT) > 0 || order.totalVat.compareTo(MAX_AMOUNT) > 0
             || order.totalGross.compareTo(MAX_AMOUNT) > 0) {
             throw new InvalidOrderException("Order total exceeds the supported amount");
@@ -121,7 +121,6 @@ public class Order {
         }
         lines.add(orderLine);
         totalNet = totalNet.add(orderLine.getLineTotalNet());
-        totalGross = totalNet.add(totalVat);
     }
 
     public void confirm(Instant now) {
