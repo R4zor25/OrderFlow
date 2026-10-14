@@ -1,6 +1,9 @@
 package com.orderflow.order.infrastructure.outbox;
 
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import com.orderflow.order.domain.Order;
@@ -10,15 +13,26 @@ import com.orderflow.order.infrastructure.events.OrderCancelledPayload;
 import com.orderflow.order.infrastructure.events.OrderConfirmedPayload;
 import com.orderflow.order.infrastructure.events.OrderPlacedPayload;
 import com.orderflow.order.infrastructure.events.OrderRejectedPayload;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class OrderOutboxWriter {
 
-    private final OutboxWriter outbox;
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper json;
+    private final Tracer tracer;
+    private final Propagator propagator;
 
-    public OrderOutboxWriter(OutboxWriter outbox) {
-        this.outbox = outbox;
+    public OrderOutboxWriter(JdbcTemplate jdbc, ObjectMapper json, Tracer tracer, Propagator propagator) {
+        this.jdbc = jdbc;
+        this.json = json;
+        this.tracer = tracer;
+        this.propagator = propagator;
     }
 
     public void placed(Order order, Instant now) {
@@ -45,8 +59,20 @@ public class OrderOutboxWriter {
     }
 
     private void write(Order order, String eventType, Object payload, Instant now) {
-        var message = new EventEnvelope<>(UUID.randomUUID(), eventType, 1, now,
-            order.getId().toString(), payload);
-        outbox.write(new OutboxEvent("Order", order.getId(), message));
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("Outbox write requires an active transaction");
+        }
+        var message = new EventEnvelope<>(UUID.randomUUID(), eventType, 1, now, order.getId().toString(), payload);
+        var headers = new HashMap<String, String>();
+        var span = tracer.currentSpan();
+        if (span != null) {
+            propagator.inject(span.context(), headers, Map::put);
+        }
+        jdbc.update("""
+            insert into orders.outbox_event
+                (id, aggregate_type, aggregate_id, event_type, payload, headers, created_at)
+            values (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)
+            """, message.eventId(), "Order", order.getId(), eventType,
+            json.writeValueAsString(message), json.writeValueAsString(headers), Timestamp.from(now));
     }
 }

@@ -18,7 +18,7 @@ import com.orderflow.order.infrastructure.CustomerRepository;
 import com.orderflow.order.infrastructure.OrderRepository;
 import com.orderflow.order.infrastructure.events.EventEnvelope;
 import com.orderflow.order.infrastructure.events.OrderCancelledPayload;
-import com.orderflow.order.infrastructure.outbox.OutboxWriter;
+import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,7 +70,7 @@ class CancelOrderIntegrationTest {
     private Clock clock;
 
     @MockitoSpyBean
-    private OutboxWriter outbox;
+    private OrderOutboxWriter outbox;
 
     @Test
     void cancelsPendingOrderAndPersistsNewVersion() {
@@ -135,7 +135,7 @@ class CancelOrderIntegrationTest {
         doAnswer(invocation -> {
             invocation.callRealMethod();
             throw new IllegalStateException("Failed after outbox insert");
-        }).when(outbox).write(any());
+        }).when(outbox).cancelled(any(), any(), any());
 
         assertThatThrownBy(() -> cancellation.cancel(id, OrderAccess.admin()))
             .isInstanceOf(IllegalStateException.class)

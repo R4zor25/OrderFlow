@@ -3,7 +3,6 @@ package com.orderflow.order;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import com.orderflow.order.domain.Customer;
@@ -14,8 +13,6 @@ import com.orderflow.order.infrastructure.events.EventEnvelope;
 import com.orderflow.order.infrastructure.events.OrderConfirmedPayload;
 import com.orderflow.order.infrastructure.events.OrderRejectedPayload;
 import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
-import com.orderflow.order.infrastructure.outbox.OutboxEvent;
-import com.orderflow.order.infrastructure.outbox.OutboxWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,9 +40,6 @@ class OrderOutboxWriterIntegrationTest {
 
     @Autowired
     private OrderOutboxWriter outbox;
-
-    @Autowired
-    private OutboxWriter rawOutbox;
 
     @Autowired
     private TransactionTemplate transactions;
@@ -108,10 +102,9 @@ class OrderOutboxWriterIntegrationTest {
     @Test
     void refusesOutboxWriteOutsideBusinessTransaction() {
         UUID id = createOrder();
-        var message = new EventEnvelope<>(UUID.randomUUID(), "OrderPlaced", 1, CREATED,
-            id.toString(), Map.of("orderId", id.toString()));
+        Order order = transactions.execute(status -> orders.findAllWithCustomerAndLines(List.of(id)).getFirst());
 
-        assertThatThrownBy(() -> rawOutbox.write(new OutboxEvent("Order", id, message)))
+        assertThatThrownBy(() -> outbox.placed(order, CREATED))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("Outbox write requires an active transaction");
         assertThat(jdbc.queryForObject("""

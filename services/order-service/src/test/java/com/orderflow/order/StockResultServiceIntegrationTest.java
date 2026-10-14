@@ -17,7 +17,7 @@ import com.orderflow.order.infrastructure.OrderRepository;
 import com.orderflow.order.infrastructure.events.EventEnvelope;
 import com.orderflow.order.infrastructure.events.OrderConfirmedPayload;
 import com.orderflow.order.infrastructure.events.OrderRejectedPayload;
-import com.orderflow.order.infrastructure.outbox.OutboxWriter;
+import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,7 +69,7 @@ class StockResultServiceIntegrationTest {
     private Clock clock;
 
     @MockitoSpyBean
-    private OutboxWriter outbox;
+    private OrderOutboxWriter outbox;
 
     @BeforeEach
     void fixedTime() {
@@ -131,7 +131,7 @@ class StockResultServiceIntegrationTest {
     void rollsBackStatusAndProcessedMarkerWhenOutboxWriteFails() {
         UUID orderId = createOrder();
         UUID eventId = UUID.randomUUID();
-        doThrow(new IllegalStateException("Outbox unavailable")).when(outbox).write(any());
+        doThrow(new IllegalStateException("Outbox unavailable")).when(outbox).confirmed(any(), any());
 
         assertThatThrownBy(() -> results.reserved(eventId, orderId))
             .isInstanceOf(IllegalStateException.class);
