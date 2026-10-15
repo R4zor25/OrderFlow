@@ -63,21 +63,28 @@ public class PriceTierCache {
             }
         }
         if (!misses.isEmpty()) {
-            // Versions are read before the tiers, so a list is never labelled newer than the data it holds.
-            Map<String, Long> versions = new HashMap<>();
-            for (var version : repository.findPriceVersions(misses)) {
-                versions.put(version.getSku(), version.getPriceVersion());
-            }
-            Map<String, List<PriceTier>> loaded = new HashMap<>();
-            for (PriceListEntry entry : repository.findAllByCustomerGroupCodeAndSkuIn(group, misses)) {
-                loaded.computeIfAbsent(entry.getSku(), ignored -> new ArrayList<>()).add(entry.toTier());
-            }
-            for (String sku : misses) {
-                List<PriceTier> tiers = List.copyOf(loaded.getOrDefault(sku, List.of()));
-                result.put(sku, tiers);
-                if (cacheAvailable) {
-                    cacheAvailable = cacheLoaded(group, sku, versions.getOrDefault(sku, 0L), tiers);
-                }
+            result.putAll(loadMissing(group, misses, cacheAvailable));
+        }
+        return result;
+    }
+
+    private Map<String, List<PriceTier>> loadMissing(String group, Set<String> misses, boolean cacheAvailable) {
+        // Versions are read before the tiers, so a list is never labelled newer than the data it holds.
+        Map<String, Long> versions = new HashMap<>();
+        for (var version : repository.findPriceVersions(misses)) {
+            versions.put(version.getSku(), version.getPriceVersion());
+        }
+        Map<String, List<PriceTier>> loaded = new HashMap<>();
+        for (PriceListEntry entry : repository.findAllByCustomerGroupCodeAndSkuIn(group, misses)) {
+            loaded.computeIfAbsent(entry.getSku(), ignored -> new ArrayList<>()).add(entry.toTier());
+        }
+        Map<String, List<PriceTier>> result = new HashMap<>();
+        boolean writable = cacheAvailable;
+        for (String sku : misses) {
+            List<PriceTier> tiers = List.copyOf(loaded.getOrDefault(sku, List.of()));
+            result.put(sku, tiers);
+            if (writable) {
+                writable = cacheLoaded(group, sku, versions.getOrDefault(sku, 0L), tiers);
             }
         }
         return result;
