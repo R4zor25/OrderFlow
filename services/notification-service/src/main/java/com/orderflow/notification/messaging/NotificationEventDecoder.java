@@ -57,26 +57,31 @@ public final class NotificationEventDecoder {
     }
 
     private static void validatePayload(String aggregateId, NotificationEvent.Payload payload) {
-        if (payload instanceof NotificationEvent.OrderConfirmed event) {
-            orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
-            if (event.totalGross() == null || blank(event.currency())) {
-                throw new InvalidNotificationEventException("Missing OrderConfirmed fields");
+        switch (payload) {
+            case NotificationEvent.OrderConfirmed event -> {
+                orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
+                if (event.totalGross() == null || blank(event.currency())) {
+                    throw new InvalidNotificationEventException("Missing OrderConfirmed fields");
+                }
             }
-        } else if (payload instanceof NotificationEvent.OrderRejected event) {
-            orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
-            if (blank(event.reason())) {
-                throw new InvalidNotificationEventException("Missing OrderRejected reason");
+            case NotificationEvent.OrderRejected event -> {
+                orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
+                if (blank(event.reason())) {
+                    throw new InvalidNotificationEventException("Missing OrderRejected reason");
+                }
             }
-        } else if (payload instanceof NotificationEvent.OrderCancelled event) {
-            orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
-            if (blank(event.previousStatus())) {
-                throw new InvalidNotificationEventException("Missing OrderCancelled previousStatus");
+            case NotificationEvent.OrderCancelled event -> {
+                orderFields(aggregateId, event.orderId(), event.customerId(), event.customerEmail());
+                if (blank(event.previousStatus())) {
+                    throw new InvalidNotificationEventException("Missing OrderCancelled previousStatus");
+                }
             }
-        } else if (payload instanceof NotificationEvent.LowStock event) {
-            if (blank(event.sku()) || event.sku().length() > MAX_SKU_LENGTH
-                    || !aggregateId.equals(event.sku()) || event.available() == null || event.threshold() == null
-                    || event.available() < 0 || event.threshold() < 0) {
-                throw new InvalidNotificationEventException("Invalid LowStock payload");
+            case NotificationEvent.LowStock event -> {
+                if (blank(event.sku()) || event.sku().length() > MAX_SKU_LENGTH
+                        || !aggregateId.equals(event.sku()) || event.available() == null || event.threshold() == null
+                        || event.available() < 0 || event.threshold() < 0) {
+                    throw new InvalidNotificationEventException("Invalid LowStock payload");
+                }
             }
         }
     }
