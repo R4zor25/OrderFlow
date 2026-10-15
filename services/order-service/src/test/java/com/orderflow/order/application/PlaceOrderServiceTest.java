@@ -89,51 +89,84 @@ class PlaceOrderServiceTest {
         verify(persistence, never()).persist(any(), any(), any(), any(), any());
     }
 
-    @Test
-    void rejectsMismatchedQuoteBeforeWritingOrder() {
-        when(customers.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer()));
-        QuoteResponse quote = validQuote();
-        when(pricing.quote(any())).thenReturn(new QuoteResponse("B2B_STANDARD", "EUR", quote.lines(),
-            new BigDecimal("170.00"), quote.totalVat(), quote.totalGross(), quote.quotedAt()));
-
-        assertThatThrownBy(() -> service.place(command(), KEY)).isInstanceOf(PricingUnavailableException.class);
-        verify(persistence, never()).persist(any(), any(), any(), any(), any());
-    }
-
     @ParameterizedTest(name = "{0}")
     @MethodSource("quotesThatDoNotMatchTheOrder")
     void rejectsQuoteThatDoesNotMatchTheOrder(String mismatch, PlaceOrderCommand command, QuoteResponse quote) {
         when(customers.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer()));
         when(pricing.quote(any())).thenReturn(quote);
 
-        assertThatThrownBy(() -> service.place(command, KEY)).isInstanceOf(PricingUnavailableException.class);
+        assertThatThrownBy(() -> service.place(command, KEY))
+            .isInstanceOf(PricingUnavailableException.class)
+            .hasMessage("Pricing service returned an invalid quote");
         verify(persistence, never()).persist(any(), any(), any(), any(), any());
     }
 
-    // Each case breaks exactly one rule of a quote that is otherwise valid for the order.
+    // Each case breaks one rule of an otherwise valid quote, so dropping any single check fails a case.
+    // A negative net total also breaks the line sum, because the only valid line is positive.
     static Stream<Arguments> quotesThatDoNotMatchTheOrder() {
         var line = validQuote().lines().getFirst();
         return Stream.of(
             Arguments.of("no quote", command(), null),
-            Arguments.of("other customer group", command(), quote("B2C", "EUR", List.of(line), "169.80", "45.85", "215.65")),
-            Arguments.of("other currency", command(), quote("B2B_STANDARD", "USD", List.of(line), "169.80", "45.85", "215.65")),
-            Arguments.of("no lines", command(), quote("B2B_STANDARD", "EUR", null, "169.80", "45.85", "215.65")),
-            Arguments.of("extra line", command(), quote("B2B_STANDARD", "EUR", List.of(line, line), "169.80", "45.85", "215.65")),
-            Arguments.of("missing net total", command(), quote("B2B_STANDARD", "EUR", List.of(line), null, "45.85", "215.65")),
-            Arguments.of("negative net total", command(), quote("B2B_STANDARD", "EUR", List.of(line), "-169.80", "45.85", "-123.95")),
-            Arguments.of("net total with three decimals", command(), quote("B2B_STANDARD", "EUR", List.of(line), "169.800", "45.85", "215.650")),
-            Arguments.of("missing VAT total", command(), quote("B2B_STANDARD", "EUR", List.of(line), "169.80", null, "215.65")),
-            Arguments.of("gross total with three decimals", command(), quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.85", "215.650")),
-            Arguments.of("gross is not net plus VAT", command(), quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.85", "215.66")),
-            Arguments.of("null quoted line", command(), quote("B2B_STANDARD", "EUR", Arrays.asList((QuoteLineResponse) null), "169.80", "45.85", "215.65")),
-            Arguments.of("other SKU", command(), quote("B2B_STANDARD", "EUR", List.of(quotedLine("TABLE-001", 2, "84.90", "169.80")), "169.80", "45.85", "215.65")),
-            Arguments.of("other quantity", command(), quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 3, "56.60", "169.80")), "169.80", "45.85", "215.65")),
-            Arguments.of("missing unit price", command(), quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, null, "169.80")), "169.80", "45.85", "215.65")),
-            Arguments.of("missing line total", command(), quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.90", null)), "169.80", "45.85", "215.65")),
-            Arguments.of("line total is not unit times quantity", command(), quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.91", "169.80")), "169.80", "45.85", "215.65")),
-            Arguments.of("line totals do not add up to the net total", command(), quote("B2B_STANDARD", "EUR", List.of(line), "170.00", "45.65", "215.65")),
-            Arguments.of("blank requested SKU", command(" ", 2), quote("B2B_STANDARD", "EUR", List.of(quotedLine(" ", 2, "84.90", "169.80")), "169.80", "45.85", "215.65")),
-            Arguments.of("non-positive requested quantity", command("CHAIR-001", 0), quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 0, "84.90", "0.00")), "0.00", "0.00", "0.00")));
+            Arguments.of("other customer group", command(),
+                quote("B2C", "EUR", List.of(line), "169.80", "45.85", "215.65")),
+            Arguments.of("other currency", command(),
+                quote("B2B_STANDARD", "USD", List.of(line), "169.80", "45.85", "215.65")),
+            Arguments.of("no lines", command(),
+                quote("B2B_STANDARD", "EUR", null, "169.80", "45.85", "215.65")),
+            Arguments.of("extra line", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line, line), "169.80", "45.85", "215.65")),
+            Arguments.of("missing net total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), null, "45.85", "215.65")),
+            Arguments.of("negative net total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "-169.80", "385.45", "215.65")),
+            Arguments.of("net total with three decimals", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.800", "45.85", "215.65")),
+            Arguments.of("missing VAT total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", null, "215.65")),
+            Arguments.of("negative VAT total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "-45.85", "123.95")),
+            Arguments.of("VAT total with three decimals", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.850", "215.65")),
+            Arguments.of("missing gross total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.85", null)),
+            Arguments.of("gross total with three decimals", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.85", "215.650")),
+            Arguments.of("gross is not net plus VAT", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "169.80", "45.85", "215.66")),
+            Arguments.of("null quoted line", command(),
+                quote("B2B_STANDARD", "EUR", Arrays.asList((QuoteLineResponse) null), "169.80", "45.85", "215.65")),
+            Arguments.of("other SKU", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("TABLE-001", 2, "84.90", "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("other quantity", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 3, "56.60", "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("missing unit price", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, null, "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("unit price with three decimals", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.900", "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("negative prices that are otherwise consistent", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "-84.90", "-169.80")),
+                    "-169.80", "0.00", "-169.80")),
+            Arguments.of("missing line total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.90", null)),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("line total with three decimals", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.90", "169.800")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("line total is not unit times quantity", command(),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 2, "84.91", "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("line totals do not add up to the net total", command(),
+                quote("B2B_STANDARD", "EUR", List.of(line), "170.00", "45.65", "215.65")),
+            Arguments.of("blank requested SKU", command(" ", 2),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine(" ", 2, "84.90", "169.80")),
+                    "169.80", "45.85", "215.65")),
+            Arguments.of("non-positive requested quantity", command("CHAIR-001", 0),
+                quote("B2B_STANDARD", "EUR", List.of(quotedLine("CHAIR-001", 0, "84.90", "0.00")),
+                    "0.00", "0.00", "0.00")));
     }
 
     private static PlaceOrderCommand command(String sku, int quantity) {
@@ -141,14 +174,17 @@ class PlaceOrderServiceTest {
     }
 
     private static QuoteLineResponse quotedLine(String sku, int quantity, String unitPriceNet, String lineTotalNet) {
-        return new QuoteLineResponse(sku, quantity, unitPriceNet == null ? null : new BigDecimal(unitPriceNet),
-            lineTotalNet == null ? null : new BigDecimal(lineTotalNet), new BigDecimal("45.85"), null, "BASE");
+        return new QuoteLineResponse(sku, quantity, amount(unitPriceNet), amount(lineTotalNet),
+            new BigDecimal("45.85"), null, "BASE");
     }
 
     private static QuoteResponse quote(String group, String currency, List<QuoteLineResponse> lines,
                                        String totalNet, String totalVat, String totalGross) {
-        return new QuoteResponse(group, currency, lines, totalNet == null ? null : new BigDecimal(totalNet),
-            totalVat == null ? null : new BigDecimal(totalVat), new BigDecimal(totalGross), NOW);
+        return new QuoteResponse(group, currency, lines, amount(totalNet), amount(totalVat), amount(totalGross), NOW);
+    }
+
+    private static BigDecimal amount(String value) {
+        return value == null ? null : new BigDecimal(value);
     }
 
     private static Customer customer() {
