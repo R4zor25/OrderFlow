@@ -65,7 +65,6 @@ public class QuoteService {
         List<QuoteResult.Line> lines = new ArrayList<>();
         BigDecimal totalNet = new BigDecimal("0.00");
         BigDecimal totalVat = new BigDecimal("0.00");
-        BigDecimal totalGross = new BigDecimal("0.00");
 
         for (QuoteInput.Line requestedLine : input.lines()) {
             Product product = products.get(requestedLine.sku());
@@ -76,8 +75,9 @@ public class QuoteService {
             lines.add(new QuoteResult.Line(requestedLine.sku(), requestedLine.quantity(), calculation));
             totalNet = totalNet.add(calculation.lineTotalNet());
             totalVat = totalVat.add(calculation.totalVat());
-            totalGross = totalGross.add(calculation.totalGross());
         }
+        // Each line's gross is its net plus VAT, so the totals add up the same way.
+        BigDecimal totalGross = totalNet.add(totalVat);
 
         log.info("Quote calculated for customerGroup={}, lineCount={}", input.customerGroup(), lines.size());
         return new QuoteResult(input.customerGroup(), List.copyOf(lines),
