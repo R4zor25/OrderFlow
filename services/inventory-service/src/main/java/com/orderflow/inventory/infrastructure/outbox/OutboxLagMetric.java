@@ -1,8 +1,8 @@
 package com.orderflow.inventory.infrastructure.outbox;
 
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -30,15 +30,12 @@ public class OutboxLagMetric implements MeterBinder {
     }
 
     private double lagSeconds() {
-        Instant oldest = jdbc.query("""
-            select created_at from inventory.outbox_event
-            where published_at is null
-            order by created_at, id
-            limit 1
-            """, result -> result.next() ? result.getTimestamp(1).toInstant() : null);
+        Timestamp oldest = jdbc.queryForObject("""
+            select min(created_at) from inventory.outbox_event where published_at is null
+            """, Timestamp.class);
         if (oldest == null) {
             return 0.0;
         }
-        return Math.max(0.0, Duration.between(oldest, clock.instant()).toMillis() / 1000.0);
+        return Math.max(0.0, Duration.between(oldest.toInstant(), clock.instant()).toMillis() / 1000.0);
     }
 }
