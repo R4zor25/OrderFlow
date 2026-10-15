@@ -33,26 +33,30 @@ public class NotificationDelivery {
         try {
             sender.send(draft);
         } catch (RuntimeException failure) {
-            var recorded = store.recordFailure(draft.eventId(),
-                    failure.getClass().getSimpleName() + ": " + failure.getMessage());
-            if (recorded.isEmpty()) {
-                log.info("Notification delivery failure ignored for already settled eventId={}", draft.eventId());
-                return;
-            }
-            var outcome = recorded.get();
-            if (outcome.failed()) {
-                failed.increment();
-                log.error("Notification delivery failed permanently for eventId={}, attempts={}, cause={}",
-                        draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
-            } else {
-                retry.increment();
-                log.warn("Notification delivery failed for eventId={}, attempts={}, cause={}; will retry",
-                        draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
-            }
+            handleFailure(draft, failure);
             return;
         }
         store.markSent(draft.eventId());
         sent.increment();
+    }
+
+    private void handleFailure(NotificationDraft draft, RuntimeException failure) {
+        var recorded = store.recordFailure(draft.eventId(),
+                failure.getClass().getSimpleName() + ": " + failure.getMessage());
+        if (recorded.isEmpty()) {
+            log.info("Notification delivery failure ignored for already settled eventId={}", draft.eventId());
+            return;
+        }
+        var outcome = recorded.get();
+        if (outcome.failed()) {
+            failed.increment();
+            log.error("Notification delivery failed permanently for eventId={}, attempts={}, cause={}",
+                    draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
+        } else {
+            retry.increment();
+            log.warn("Notification delivery failed for eventId={}, attempts={}, cause={}; will retry",
+                    draft.eventId(), outcome.attempts(), failure.getClass().getSimpleName());
+        }
     }
 
     private static Counter outcome(MeterRegistry registry, String outcome) {
