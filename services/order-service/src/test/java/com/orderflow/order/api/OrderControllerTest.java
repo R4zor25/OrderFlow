@@ -29,6 +29,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -111,7 +112,8 @@ class OrderControllerTest {
                     """))
             .andExpect(status().isBadRequest())
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.type").value("/problems/bad-request"));
+            .andExpect(jsonPath("$.type").value("/problems/bad-request"))
+            .andExpect(jsonPath("$.title").value("Bad request"));
     }
 
     @Test
@@ -148,7 +150,17 @@ class OrderControllerTest {
         mvc.perform(get("/api/v1/unknown").principal(customer(CUSTOMER)))
             .andExpect(status().isNotFound())
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.type").value("/problems/not-found"));
+            .andExpect(jsonPath("$.type").value("/problems/not-found"))
+            .andExpect(jsonPath("$.title").value("Not found"));
+    }
+
+    @Test
+    void otherFrameworkErrorKeepsItsTitleUnderTheGenericType() throws Exception {
+        mvc.perform(put("/api/v1/orders").principal(customer(CUSTOMER)))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/http-error"))
+            .andExpect(jsonPath("$.title").value("Method Not Allowed"));
     }
 
     @Test

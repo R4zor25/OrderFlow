@@ -98,10 +98,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         // Framework errors arrive without a specific type (null or about:blank); the API promises stable relative types.
         if (body instanceof ProblemDetail problem
             && (problem.getType() == null || DEFAULT_TYPE.equals(problem.getType()))) {
-            int code = status.value();
-            problem.setType(URI.create("/problems/" + (code == 400 ? "bad-request" : code == 404 ? "not-found" : "http-error")));
-            if (code == 400 || code == 404) {
-                problem.setTitle(code == 400 ? "Bad request" : "Not found");
+            switch (status.value()) {
+                case 400 -> {
+                    problem.setType(URI.create("/problems/bad-request"));
+                    problem.setTitle("Bad request");
+                }
+                case 404 -> {
+                    problem.setType(URI.create("/problems/not-found"));
+                    problem.setTitle("Not found");
+                }
+                default -> problem.setType(URI.create("/problems/http-error"));
             }
         }
         return super.createResponseEntity(body, headers, status, request);
