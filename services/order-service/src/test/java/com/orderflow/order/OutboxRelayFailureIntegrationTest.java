@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-import com.orderflow.order.application.OutboxRelay;
+import com.orderflow.order.infrastructure.outbox.OutboxRelay;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;

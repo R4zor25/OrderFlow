@@ -1,4 +1,4 @@
-package com.orderflow.order.application;
+package com.orderflow.order.infrastructure.outbox;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -9,7 +9,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.orderflow.order.config.OutboxRelayProperties;
-import com.orderflow.order.infrastructure.outbox.OutboxPublishFailure;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;

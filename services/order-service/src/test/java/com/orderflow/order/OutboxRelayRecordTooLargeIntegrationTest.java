@@ -4,7 +4,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.orderflow.order.application.OutboxRelay;
+import com.orderflow.order.infrastructure.outbox.OutboxRelay;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

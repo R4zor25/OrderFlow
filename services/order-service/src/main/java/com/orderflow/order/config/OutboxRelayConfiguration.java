@@ -1,6 +1,6 @@
 package com.orderflow.order.config;
 
-import com.orderflow.order.application.OutboxRelay;
+import com.orderflow.order.infrastructure.outbox.OutboxRelay;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
