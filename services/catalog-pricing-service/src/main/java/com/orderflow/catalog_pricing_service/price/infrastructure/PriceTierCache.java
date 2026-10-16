@@ -79,12 +79,11 @@ public class PriceTierCache {
             loaded.computeIfAbsent(entry.getSku(), ignored -> new ArrayList<>()).add(entry.toTier());
         }
         Map<String, List<PriceTier>> result = new HashMap<>();
-        boolean writable = cacheAvailable;
         for (String sku : misses) {
             List<PriceTier> tiers = List.copyOf(loaded.getOrDefault(sku, List.of()));
             result.put(sku, tiers);
-            if (writable) {
-                writable = cacheLoaded(group, sku, versions.getOrDefault(sku, 0L), tiers);
+            if (cacheAvailable) {
+                cacheAvailable = cacheLoaded(group, sku, versions.getOrDefault(sku, 0L), tiers);
             }
         }
         return result;

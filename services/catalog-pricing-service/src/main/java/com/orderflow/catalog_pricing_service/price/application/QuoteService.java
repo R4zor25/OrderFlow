@@ -76,7 +76,7 @@ public class QuoteService {
             totalNet = totalNet.add(calculation.lineTotalNet());
             totalVat = totalVat.add(calculation.totalVat());
         }
-        // Each line's gross is its net plus VAT, so the totals add up the same way.
+        // PriceCalculator's line gross is exactly net plus VAT (both scale 2), so the totals are too.
         BigDecimal totalGross = totalNet.add(totalVat);
 
         log.info("Quote calculated for customerGroup={}, lineCount={}", input.customerGroup(), lines.size());

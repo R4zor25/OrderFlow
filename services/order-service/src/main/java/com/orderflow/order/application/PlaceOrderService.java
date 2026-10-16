@@ -82,7 +82,8 @@ public class PlaceOrderService {
             && requested.quantity() > 0 && requested.sku().equals(priced.sku())
             && requested.quantity() == priced.quantity()
             && validMoney(priced.unitPriceNet()) && validMoney(priced.lineTotalNet())
-            && priced.lineTotalNet().compareTo(priced.unitPriceNet().multiply(BigDecimal.valueOf(priced.quantity()))) == 0;
+            && priced.lineTotalNet()
+                .compareTo(priced.unitPriceNet().multiply(BigDecimal.valueOf(priced.quantity()))) == 0;
     }
 
     private static boolean validMoney(BigDecimal amount) {
