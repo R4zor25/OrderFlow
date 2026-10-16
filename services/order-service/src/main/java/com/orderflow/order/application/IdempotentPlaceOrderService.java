@@ -57,19 +57,7 @@ public class IdempotentPlaceOrderService {
         }
         var acquired = (RedisIdempotencyStore.Acquired) decision;
         try {
-            var existing = existingOrder(command.customerId(), idempotency);
-            if (existing.isPresent()) {
-                completeQuietly(acquired, existing.get(), command.customerId());
-                return existing.get();
-            }
-            PlaceOrderResult result;
-            try {
-                result = placeOrderService.place(command, idempotency);
-            } catch (DataIntegrityViolationException duplicate) {
-                var winner = existingOrder(command.customerId(), idempotency).orElseThrow(() -> duplicate);
-                completeQuietly(acquired, winner, command.customerId());
-                return winner;
-            }
+            var result = findOrPlace(command, idempotency);
             completeQuietly(acquired, result, command.customerId());
             return result;
         } catch (RuntimeException | Error failure) {
@@ -80,6 +68,19 @@ public class IdempotentPlaceOrderService {
                 failure.addSuppressed(cleanupFailure);
             }
             throw failure;
+        }
+    }
+
+    private PlaceOrderResult findOrPlace(PlaceOrderCommand command, IdempotencyKey idempotency) {
+        var existing = existingOrder(command.customerId(), idempotency);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        try {
+            return placeOrderService.place(command, idempotency);
+        } catch (DataIntegrityViolationException duplicate) {
+            // A concurrent request with the same key committed first; its order is the answer.
+            return existingOrder(command.customerId(), idempotency).orElseThrow(() -> duplicate);
         }
     }
 

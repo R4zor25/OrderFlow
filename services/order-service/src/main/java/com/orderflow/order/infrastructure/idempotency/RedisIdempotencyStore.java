@@ -41,7 +41,7 @@ public class RedisIdempotencyStore {
             for (int attempt = 0; attempt < 3; attempt++) {
                 Boolean created = redis.opsForValue().setIfAbsent(redisKey, pendingJson, properties.inProgressLease());
                 if (Boolean.TRUE.equals(created)) {
-                    return new Acquired(redisKey, pendingJson);
+                    return new Acquired(redisKey, pendingJson, requestHash);
                 }
                 String existingJson = redis.opsForValue().get(redisKey);
                 if (existingJson == null) {
@@ -69,9 +69,8 @@ public class RedisIdempotencyStore {
     }
 
     public void complete(Acquired acquired, PlaceOrderResult result) {
-        Entry pending = json.readValue(acquired.pendingJson(), Entry.class);
         String completedJson = json.writeValueAsString(new Entry(State.COMPLETED,
-            pending.requestHash(), null, result));
+            acquired.requestHash(), null, result));
         try {
             Long changed = redis.execute(COMPLETE, List.of(acquired.redisKey()),
                 acquired.pendingJson(), completedJson, Long.toString(properties.ttl().toSeconds()));
@@ -101,7 +100,7 @@ public class RedisIdempotencyStore {
     public sealed interface Decision permits Acquired, Replayed {
     }
 
-    public record Acquired(String redisKey, String pendingJson) implements Decision {
+    public record Acquired(String redisKey, String pendingJson, String requestHash) implements Decision {
     }
 
     public record Replayed(PlaceOrderResult result) implements Decision {
