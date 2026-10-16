@@ -86,14 +86,7 @@ public class OutboxRelay {
                 // A failed send usually means the broker is struggling; the rest of the batch waits for the next run.
                 break;
             }
-
-            int updated = jdbc.update("""
-                update orders.outbox_event set published_at = ?
-                where id = ? and published_at is null
-                """, Timestamp.from(clock.instant()), event.id());
-            if (updated != 1) {
-                throw new IllegalStateException("Outbox event was not available to mark published: " + event.id());
-            }
+            markPublished(event);
             published++;
         }
         return published;
@@ -121,6 +114,16 @@ public class OutboxRelay {
             }
         } finally {
             observations.setCurrentObservationScope(previousScope);
+        }
+    }
+
+    private void markPublished(PendingEvent event) {
+        int updated = jdbc.update("""
+            update orders.outbox_event set published_at = ?
+            where id = ? and published_at is null
+            """, Timestamp.from(clock.instant()), event.id());
+        if (updated != 1) {
+            throw new IllegalStateException("Outbox event was not available to mark published: " + event.id());
         }
     }
 
