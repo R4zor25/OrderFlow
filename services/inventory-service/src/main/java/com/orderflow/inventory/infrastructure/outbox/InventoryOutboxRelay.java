@@ -83,47 +83,53 @@ public class InventoryOutboxRelay {
         for (var event : events) {
             var record = new ProducerRecord<String, String>(TOPIC, event.aggregateId(), event.payload());
             record.headers().add(new RecordHeader("eventType", event.eventType().getBytes(StandardCharsets.UTF_8)));
-            boolean failed = true;
-            var previousObservationScope = observations.getCurrentObservationScope();
-            // The saved event context takes precedence over the scheduled relay observation.
-            observations.setCurrentObservationScope(null);
-            try (var detached = tracer.withSpan(null)) {
-                JsonNode headers = event.headers() == null ? null : json.readTree(event.headers());
-                var span = propagator.extract(headers, (carrier, key) -> {
-                    var value = carrier == null ? null : carrier.get(key);
-                    return value != null && value.isString() ? value.asString() : null;
-                }).name("inventory.outbox.publish").start();
-                try (var scope = tracer.withSpan(span)) {
-                    kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
-                    log.info("Published outbox event eventId={} aggregateId={} eventType={}",
-                        event.id(), event.aggregateId(), event.eventType());
-                    failed = false;
-                } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
-                    span.error(exception);
-                    throw exception;
-                } finally {
-                    span.end();
-                }
-            } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
-                recordFailure(event, exception);
-            } finally {
-                observations.setCurrentObservationScope(previousObservationScope);
-            }
-            if (failed) {
+            if (!publish(event, record)) {
                 // A failed send usually means the broker is struggling; the rest of the batch waits for the next run.
                 break;
             }
-
-            int updated = jdbc.update("""
-                update inventory.outbox_event set published_at = ?
-                where id = ? and published_at is null
-                """, Timestamp.from(clock.instant()), event.id());
-            if (updated != 1) {
-                throw new IllegalStateException("Outbox event was not available to mark published: " + event.id());
-            }
+            markPublished(event);
             published++;
         }
         return published;
+    }
+
+    private boolean publish(PendingEvent event, ProducerRecord<String, String> record) {
+        var previousObservationScope = observations.getCurrentObservationScope();
+        // The saved event context takes precedence over the scheduled relay observation.
+        observations.setCurrentObservationScope(null);
+        try (var detached = tracer.withSpan(null)) {
+            JsonNode headers = event.headers() == null ? null : json.readTree(event.headers());
+            var span = propagator.extract(headers, (carrier, key) -> {
+                var value = carrier == null ? null : carrier.get(key);
+                return value != null && value.isString() ? value.asString() : null;
+            }).name("inventory.outbox.publish").start();
+            try (var scope = tracer.withSpan(span)) {
+                kafka.send(record).get(properties.ackTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                log.info("Published outbox event eventId={} aggregateId={} eventType={}",
+                    event.id(), event.aggregateId(), event.eventType());
+                return true;
+            } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
+                span.error(exception);
+                throw exception;
+            } finally {
+                span.end();
+            }
+        } catch (InterruptedException | ExecutionException | TimeoutException | RuntimeException exception) {
+            recordFailure(event, exception);
+            return false;
+        } finally {
+            observations.setCurrentObservationScope(previousObservationScope);
+        }
+    }
+
+    private void markPublished(PendingEvent event) {
+        int updated = jdbc.update("""
+            update inventory.outbox_event set published_at = ?
+            where id = ? and published_at is null
+            """, Timestamp.from(clock.instant()), event.id());
+        if (updated != 1) {
+            throw new IllegalStateException("Outbox event was not available to mark published: " + event.id());
+        }
     }
 
     private void recordFailure(PendingEvent event, Throwable failure) {
