@@ -186,22 +186,31 @@ class PlaceOrderIntegrationTest {
     }
 
     @Test
-    void releaseFailureDoesNotHideTheOriginalFailure() throws Exception {
+    void releaseFailureStillAnswersWithTheOriginalProblem() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class)))
+            .thenThrow(new PricingUnavailableException("Unavailable", new RuntimeException()));
+        doThrow(new IdempotencyException(IdempotencyException.Reason.STORE_UNAVAILABLE, "Redis down"))
+            .when(idempotencyStore).release(any());
+
+        var response = postOrder(UUID.randomUUID().toString(), requestBody());
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(json.readTree(response.getContentAsString()).path("type").asString())
+            .isEqualTo("/problems/pricing-unavailable");
+    }
+
+    @Test
+    void releaseFailureIsAttachedToTheOriginalFailure() {
         var pricingFailure = new PricingUnavailableException("Unavailable", new RuntimeException());
         var releaseFailure = new IdempotencyException(IdempotencyException.Reason.STORE_UNAVAILABLE, "Redis down");
         when(pricing.quote(any(QuoteRequest.class))).thenThrow(pricingFailure);
         doThrow(releaseFailure).when(idempotencyStore).release(any());
-
-        var response = postOrder(UUID.randomUUID().toString(), requestBody());
-        assertThat(response.getStatus()).isEqualTo(503);
-        assertThat(json.readTree(response.getContentAsString()).path("type").asString())
-            .isEqualTo("/problems/pricing-unavailable");
-
         var command = new PlaceOrderCommand(UUID.fromString("33333333-3333-4333-8333-333333333333"),
             List.of(new PlaceOrderCommand.Line("CHAIR-001", 2)));
+
         assertThatThrownBy(() -> placeOrder.place(UUID.randomUUID().toString(), command))
             .isSameAs(pricingFailure)
-            .satisfies(failure -> assertThat(failure.getSuppressed()).contains(releaseFailure));
+            .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(releaseFailure));
     }
 
     @Test

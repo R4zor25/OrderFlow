@@ -79,7 +79,7 @@ public class IdempotentPlaceOrderService {
         try {
             return placeOrderService.place(command, idempotency);
         } catch (DataIntegrityViolationException duplicate) {
-            // A concurrent request with the same key committed first; its order is the answer.
+            // Another request with the same key committed first; its order is the answer.
             return existingOrder(command.customerId(), idempotency).orElseThrow(() -> duplicate);
         }
     }
