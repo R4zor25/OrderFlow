@@ -9,6 +9,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import com.orderflow.order.domain.OrderStatus;
+import com.orderflow.order.application.IdempotentPlaceOrderService;
+import com.orderflow.order.application.PlaceOrderCommand;
 import com.orderflow.order.application.PlaceOrderResult;
 import com.orderflow.order.domain.IdempotencyException;
 import com.orderflow.order.infrastructure.pricing.PricingGateway;
@@ -66,6 +68,9 @@ class PlaceOrderIntegrationTest {
 
     @Autowired
     private StringRedisTemplate redis;
+
+    @Autowired
+    private IdempotentPlaceOrderService placeOrder;
 
     @MockitoSpyBean
     private RedisIdempotencyStore idempotencyStore;
@@ -178,6 +183,25 @@ class PlaceOrderIntegrationTest {
         assertThat(json.readTree(changed.getContentAsString()).get("type").asText())
             .isEqualTo("/problems/idempotency-key-reused");
         verify(pricing, times(1)).quote(any(QuoteRequest.class));
+    }
+
+    @Test
+    void releaseFailureDoesNotHideTheOriginalFailure() throws Exception {
+        var pricingFailure = new PricingUnavailableException("Unavailable", new RuntimeException());
+        var releaseFailure = new IdempotencyException(IdempotencyException.Reason.STORE_UNAVAILABLE, "Redis down");
+        when(pricing.quote(any(QuoteRequest.class))).thenThrow(pricingFailure);
+        doThrow(releaseFailure).when(idempotencyStore).release(any());
+
+        var response = postOrder(UUID.randomUUID().toString(), requestBody());
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(json.readTree(response.getContentAsString()).path("type").asString())
+            .isEqualTo("/problems/pricing-unavailable");
+
+        var command = new PlaceOrderCommand(UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            List.of(new PlaceOrderCommand.Line("CHAIR-001", 2)));
+        assertThatThrownBy(() -> placeOrder.place(UUID.randomUUID().toString(), command))
+            .isSameAs(pricingFailure)
+            .satisfies(failure -> assertThat(failure.getSuppressed()).contains(releaseFailure));
     }
 
     @Test
