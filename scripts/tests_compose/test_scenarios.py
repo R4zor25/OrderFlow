@@ -12,10 +12,10 @@ ROOT = test_stack.ROOT
 
 
 class ScenarioScriptsTest(test_stack.ComposeStackTest):
-    def test_stack_starts_and_confirms_order_with_stock_and_smtp_notification(self):
+    def test_stack_confirms_order_and_runs_the_public_scenario_scripts(self):
         for name in ('smoke.sh', 'oversell-test.sh'):
             self.assertTrue((ROOT / 'scripts' / name).is_file(), f'Missing public scenario script: {name}')
-        super().test_stack_starts_and_confirms_order_with_stock_and_smtp_notification()
+        self.start_stack_and_confirm_order_with_stock_and_smtp_notification()
         environment = dict(self.env)
         environment.update(BASE_URL=self.base_url('order-service', 8082),
                            MAILPIT_URL=self.base_url('mailpit', 8025),

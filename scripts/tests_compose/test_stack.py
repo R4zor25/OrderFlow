@@ -1,4 +1,4 @@
-"""Verify the public Compose stack from a tracked-files-only copy."""
+"""Start the public Compose stack from a tracked-files-only copy and confirm one real order through it."""
 
 import json
 import os
@@ -17,6 +17,7 @@ APPLICATIONS = {'catalog-pricing-service': 8081, 'order-service': 8082,
                 'inventory-service': 8083, 'notification-service': 8084}
 
 
+# A base class without tests of its own, so the stack starts once, inside the scenario test that extends it.
 class ComposeStackTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='orderflow-compose-')
@@ -100,7 +101,7 @@ class ComposeStackTest(unittest.TestCase):
             time.sleep(0.25)
         self.fail('Expected asynchronous result not observed: ' + str(last))
 
-    def test_stack_starts_and_confirms_order_with_stock_and_smtp_notification(self):
+    def start_stack_and_confirm_order_with_stock_and_smtp_notification(self):
         model = json.loads(self.invoke('config', '--format', 'json'))
         self.assertTrue(APPLICATIONS.keys() <= model['services'].keys(), 'Compose is missing application services')
         self.compose += ['-f', str(self.export / 'ports.yaml')]
