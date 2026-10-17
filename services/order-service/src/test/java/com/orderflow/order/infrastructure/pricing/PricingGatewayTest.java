@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClient
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -153,8 +154,10 @@ class PricingGatewayTest {
             .willReturn(aResponse().withStatus(503)));
 
         for (int call = 0; call < 10; call++) {
+            // The breaker must open on the stubbed server errors; any other failure is reported with its cause.
             assertThatThrownBy(() -> gateway.quote(sampleRequest()))
-                .isInstanceOf(PricingUnavailableException.class);
+                .isInstanceOf(PricingUnavailableException.class)
+                .hasRootCauseInstanceOf(HttpServerErrorException.ServiceUnavailable.class);
         }
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(10);
@@ -168,8 +171,10 @@ class PricingGatewayTest {
         server.stubFor(post(urlEqualTo("/api/v1/quotes"))
             .willReturn(aResponse().withStatus(503)));
         for (int call = 0; call < 10; call++) {
+            // The breaker must open on the stubbed server errors; any other failure is reported with its cause.
             assertThatThrownBy(() -> gateway.quote(sampleRequest()))
-                .isInstanceOf(PricingUnavailableException.class);
+                .isInstanceOf(PricingUnavailableException.class)
+                .hasRootCauseInstanceOf(HttpServerErrorException.ServiceUnavailable.class);
         }
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
 
