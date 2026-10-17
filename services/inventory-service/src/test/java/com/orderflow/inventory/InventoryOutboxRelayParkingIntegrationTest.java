@@ -30,6 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -146,6 +147,37 @@ class InventoryOutboxRelayParkingIntegrationTest {
         relay.publishBatch();
 
         assertThat(meters.get("outbox.parked").gauge().value()).isEqualTo(1.0);
+    }
+
+    @Test
+    void parkedGaugeLeavesOutEventsThatAreOnlyWaiting() {
+        UUID orderId = UUID.randomUUID();
+        Instant now = Instant.now();
+        UUID tooLarge = insert(orderId, now);
+        UUID waiting = insert(orderId, now.plusSeconds(1));
+        undeliverable.add(tooLarge);
+
+        relay.publishBatch();
+
+        assertThat(column(waiting, "published_at")).isNull();
+        assertThat(column(waiting, "parked_at")).isNull();
+        assertThat(meters.get("outbox.parked").gauge().value()).isEqualTo(1.0);
+    }
+
+    @Test
+    void rollsBackTheBatchWhenAnEventIsNoLongerUnpublished() {
+        UUID event = insert(UUID.randomUUID(), Instant.now());
+        when(kafka.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            // Same thread and transaction as the relay, so the row lock does not stop this update.
+            jdbc.update("update inventory.outbox_event set published_at = now() where id = ?", event);
+            return CompletableFuture.completedFuture(null);
+        });
+
+        assertThatThrownBy(() -> relay.publishBatch())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Outbox event was not available to mark published: " + event);
+
+        assertThat(column(event, "published_at")).isNull();
     }
 
     @Test
