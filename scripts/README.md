@@ -174,8 +174,9 @@ Kafka clients use the internal listener. The normal development stack is untouch
 The test waits for healthy containers and checks each application readiness endpoint.
 It submits a seeded B2C order for two CHAIR-001 units, checks HTTP 202/PENDING,
 polls for CONFIRMED, verifies a committed inventory reservation, and observes
-one SMTP notification row and the matching email in Mailpit. This is one positive
-integration scenario, not comprehensive smoke or oversell coverage.
+one SMTP notification row and the matching email in Mailpit. This positive order
+check lives in `test_stack.py` as a shared helper; `test_scenarios.py` runs it once
+and then the smoke and oversell scripts against the same stack, so the stack starts once.
 
 Ignored `target/compose-verification/<project>/` retains startup/container logs and
 `result.json`. `up_build_wait_seconds` measures the complete Compose build/start/wait
@@ -232,8 +233,8 @@ python3 -m unittest discover -s scripts/tests_compose -p test_scenarios.py -v
 
 It also verifies notification partition assignment, refusal of a depleted
 oversell fixture, and failure for an unreachable HTTP endpoint. Evidence is kept
-under ignored `target/compose-verification/<project>/`, alongside the earlier
-stack-verification evidence. The integration fixture uses ephemeral loopback
+under ignored `target/compose-verification/<project>/`, in the same directory as
+the stack-verification evidence. The integration fixture uses ephemeral loopback
 ports and an invocation-specific password, never the normal development volumes.
 
 | Variable | Default / purpose |
