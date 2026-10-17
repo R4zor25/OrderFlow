@@ -54,7 +54,8 @@ def check_release_job(w):
     assert "inputs.operation == 'deploy'" in deploy['if']
     assert "verify-images" in images_ready['run']
     assert release['steps'].index(deploy) > release['steps'].index(images_ready)
-    assert not any(s.get('uses', '').startswith('docker/build-push-action@') for s in release['steps'])
+    assert not any(s.get('uses', '').startswith('docker/build-push-action@')
+                   for s in release['steps'])
 
 
 def check_publish_job(w):
@@ -71,7 +72,8 @@ def check_publish_job(w):
                       'order-service': 'services/order-service',
                       'notification-service': 'services/notification-service',
                       'keycloak': 'infra/keycloak'}
-    assert any('image-status --service "$IMAGE_NAME"' in s.get('run', '') for s in publish['steps'])
+    assert any('image-status --service "$IMAGE_NAME"' in s.get('run', '')
+               for s in publish['steps'])
     build = action_step(publish, 'docker/build-push-action')
     assert 'exists' in build['if'] and "'false'" in build['if']
     assert build['with']['platforms'] == 'linux/arm64' and build['with']['push'] is True
@@ -100,14 +102,16 @@ def update(job, **values):
 
 UNSAFE_MUTATIONS = {
     'release runs without verify and publish': update('release', needs=['validate']),
-    'release token loses the id-token write': lambda w: w['jobs']['release']['permissions'].update({'id-token': 'read'}),
+    'release token loses the id-token write': lambda w: w['jobs']['release']['permissions'].update(
+        {'id-token': 'read'}),
     'release gets an environment': update('release', environment='production'),
     'release runs whatever happened before': update('release', **{'if': 'always()'}),
     'verify ignores the operation': update('verify', **{'if': 'true'}),
     'release runs without publish': update('release', needs=['validate', 'verify']),
     'publish gets an environment': update('publish', environment='production'),
     'publish runs whatever happened before': update('publish', **{'if': 'always()'}),
-    'publish skips an image': lambda w: w['jobs']['publish']['strategy']['matrix']['include'].pop(),
+    'publish skips an image':
+        lambda w: w['jobs']['publish']['strategy']['matrix']['include'].pop(),
     'deploy runs on publish': lambda w: step(w['jobs']['release'], 'deploy').update(
         {'if': "inputs.operation == 'publish'"}),
 }
