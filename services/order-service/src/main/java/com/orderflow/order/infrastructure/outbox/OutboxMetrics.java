@@ -11,21 +11,24 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-public class OutboxLagMetric implements MeterBinder {
+public class OutboxMetrics implements MeterBinder {
 
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
-    public OutboxLagMetric(JdbcTemplate jdbc, Clock clock) {
+    public OutboxMetrics(JdbcTemplate jdbc, Clock clock) {
         this.jdbc = jdbc;
         this.clock = clock;
     }
 
     @Override
     public void bindTo(MeterRegistry registry) {
-        Gauge.builder("outbox.lag.seconds", this, OutboxLagMetric::lagSeconds)
+        Gauge.builder("outbox.lag.seconds", this, OutboxMetrics::lagSeconds)
             .description("Age of the oldest unpublished order event")
             .baseUnit("seconds")
+            .register(registry);
+        Gauge.builder("outbox.parked", this, OutboxMetrics::parkedEvents)
+            .description("Number of outbox events parked as undeliverable")
             .register(registry);
     }
 
@@ -37,5 +40,13 @@ public class OutboxLagMetric implements MeterBinder {
             return 0.0;
         }
         return Math.max(0.0, Duration.between(oldest.toInstant(), clock.instant()).toMillis() / 1000.0);
+    }
+
+    private double parkedEvents() {
+        Long parked = jdbc.queryForObject("""
+            select count(*) from orders.outbox_event
+            where parked_at is not null and published_at is null
+            """, Long.class);
+        return parked == null ? 0.0 : parked;
     }
 }
