@@ -1,7 +1,8 @@
-package com.orderflow.order.config;
+package com.orderflow.order.infrastructure.health;
 
 import java.util.concurrent.TimeUnit;
 
+import com.orderflow.order.config.KafkaHealthProperties;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.DescribeClusterOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

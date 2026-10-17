@@ -1,10 +1,11 @@
-package com.orderflow.order.config;
+package com.orderflow.order.infrastructure.health;
 
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
+import com.orderflow.order.config.KafkaHealthProperties;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.DescribeClusterOptions;
 import org.apache.kafka.clients.admin.DescribeClusterResult;
