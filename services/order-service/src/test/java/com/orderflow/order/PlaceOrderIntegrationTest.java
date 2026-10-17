@@ -29,6 +29,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -211,6 +212,21 @@ class PlaceOrderIntegrationTest {
         assertThatThrownBy(() -> placeOrder.place(UUID.randomUUID().toString(), command))
             .isSameAs(pricingFailure)
             .satisfies(failure -> assertThat(failure.getSuppressed()).containsExactly(releaseFailure));
+    }
+
+    @Test
+    void integrityFailureWithoutAWinningOrderIsReportedAndFreesTheClaim() throws Exception {
+        when(pricing.quote(any(QuoteRequest.class))).thenReturn(validQuote());
+        doThrow(new DataIntegrityViolationException("another constraint")).when(outbox).placed(any(), any());
+        String key = UUID.randomUUID().toString();
+
+        var response = postOrder(key, requestBody());
+
+        assertThat(response.getStatus()).isEqualTo(500);
+        assertThat(json.readTree(response.getContentAsString()).path("type").asString())
+            .isEqualTo("/problems/data-integrity");
+        assertThat(redis.opsForValue().get("idem:33333333-3333-4333-8333-333333333333:" + key)).isNull();
+        assertThat(ordersWithKey(key)).isZero();
     }
 
     @Test
