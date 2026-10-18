@@ -468,8 +468,8 @@ orderflow/
 
 Package layout inside a service, by feature:
 
-- Top-level packages are features; a feature keeps its own `*Configuration` and `*Properties` records.
-- A feature of up to eight files stays flat. A larger one has `api`, `application`, `domain` and `infrastructure` (and, if needed, `config`) subpackages; a clearly separate part of a flat feature may get its own subpackage, such as `pricing/quote`.
+- Top-level packages are features; a feature keeps its own `*Configuration` and `*Properties` records. Three registrations still sit outside their feature: order's `platform/SchedulerLockConfiguration` enables `OrderSagaProperties` and `RetentionProperties`, inventory's `platform/LowStockSchedulingConfiguration` enables `RetentionProperties`, and inventory's `messaging/InventoryMessagingConfiguration` enables `InventoryOutboxRelayProperties` and schedules the outbox relay.
+- A package holds at most about eight files, counted directly in that package. A small feature stays flat; a larger one has `api`, `application`, `domain` and `infrastructure` subpackages, or splits off clearly separate parts, such as `pricing/quote` and `pricing/config`. The order feature's use-case layers are the exception: `orders/api` has nine files and `orders/application` eleven.
 - Code that belongs to no single feature lives under `platform`: `platform/web` for security, the exception handler, HTTP limits and OpenAPI; `platform/health` for health indicators; the `platform` root for the clock and the scheduler lock.
 - Event contract records (the envelope and payloads) live in `events`, because the outbox writer and the listener share them.
 - A feature name does not repeat the service's root package, so the order feature is `orders`, not `order.order`.
@@ -489,4 +489,4 @@ com.orderflow.order
 
 No ports-and-adapters interfaces unless there are two real implementations.
 
-The other services follow the same rule: `catalog-pricing-service` has `product` and `price`, `inventory-service` has `stock`, `reservation` (which also handles the order events that reserve and release stock) and `lowstock`, and `notification-service` has `notifications`, `delivery`, `messaging` and `retention`.
+The other services follow the same rule. `catalog-pricing-service` has the `product` and `price` features and a `platform` package. `inventory-service` has `stock`, `reservation` (which also handles the order events that reserve and release stock) and `lowstock`, plus `events`, `messaging`, `outbox`, `retention` and `platform`. `notification-service` has `notifications`, `delivery`, `messaging` (with `messaging/deadletter`), `retention` and `platform`.
