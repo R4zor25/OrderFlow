@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.config;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -13,8 +13,6 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
-
-import com.orderflow.catalog_pricing_service.api.SecurityProblemHandler;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {

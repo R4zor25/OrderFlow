@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.config;
+package com.orderflow.catalog_pricing_service.platform;
 
 import java.time.Clock;
 

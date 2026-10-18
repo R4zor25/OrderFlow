@@ -1,9 +1,8 @@
-package com.orderflow.catalog_pricing_service.api;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
 
-import com.orderflow.catalog_pricing_service.config.CatalogHttpProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;

@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.config;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.util.unit.DataSize;

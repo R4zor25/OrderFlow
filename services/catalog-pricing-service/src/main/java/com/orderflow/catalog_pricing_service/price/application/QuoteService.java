@@ -13,9 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
 import com.orderflow.catalog_pricing_service.price.domain.PriceCalculator;
 import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
 import com.orderflow.catalog_pricing_service.product.domain.Product;
 import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;

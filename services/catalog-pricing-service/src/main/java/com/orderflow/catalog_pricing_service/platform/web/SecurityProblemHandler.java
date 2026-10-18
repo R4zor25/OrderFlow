@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.api;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;

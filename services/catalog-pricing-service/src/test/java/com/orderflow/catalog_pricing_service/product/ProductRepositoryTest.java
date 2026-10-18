@@ -1,6 +1,8 @@
 package com.orderflow.catalog_pricing_service.product;
 
+import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.product.domain.Product;
+import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -8,9 +10,6 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-
-import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
-import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

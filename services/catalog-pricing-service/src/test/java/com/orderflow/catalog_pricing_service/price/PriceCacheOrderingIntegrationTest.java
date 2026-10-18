@@ -10,8 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
-import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService;
 import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService.TierInput;
+import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService;
 import com.orderflow.catalog_pricing_service.price.domain.PriceTier;
 import com.orderflow.catalog_pricing_service.price.infrastructure.CachedPriceTiers;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;

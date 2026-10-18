@@ -13,8 +13,8 @@ import javax.sql.DataSource;
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
-import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService;
 import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService.TierInput;
+import com.orderflow.catalog_pricing_service.price.application.PriceUpdateService;
 import com.orderflow.catalog_pricing_service.product.domain.Product;
 import com.orderflow.catalog_pricing_service.product.infrastructure.ProductRepository;
 import org.junit.jupiter.api.AfterEach;

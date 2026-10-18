@@ -1,6 +1,6 @@
 package com.orderflow.catalog_pricing_service.product;
 
-import com.orderflow.catalog_pricing_service.api.ApiExceptionHandler;
+import com.orderflow.catalog_pricing_service.platform.web.ApiExceptionHandler;
 import com.orderflow.catalog_pricing_service.product.api.ProductController;
 import com.orderflow.catalog_pricing_service.product.application.ProductCommandService;
 import com.orderflow.catalog_pricing_service.product.application.ProductQueryService;

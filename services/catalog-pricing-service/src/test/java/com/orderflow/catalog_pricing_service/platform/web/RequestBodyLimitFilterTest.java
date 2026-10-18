@@ -1,8 +1,7 @@
-package com.orderflow.catalog_pricing_service.api;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import java.io.IOException;
 
-import com.orderflow.catalog_pricing_service.config.CatalogHttpProperties;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;

@@ -17,8 +17,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import com.orderflow.catalog_pricing_service.PostgresTestConfiguration;
 import com.orderflow.catalog_pricing_service.RedisTestConfiguration;
-import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
 import com.orderflow.catalog_pricing_service.price.infrastructure.PriceListEntryRepository;
+import com.orderflow.catalog_pricing_service.price.infrastructure.PriceTierCache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;

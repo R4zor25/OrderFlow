@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.config;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;

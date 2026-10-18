@@ -7,8 +7,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.orderflow.catalog_pricing_service.price.application.QuoteService;
 import com.orderflow.catalog_pricing_service.price.application.QuoteInput;
+import com.orderflow.catalog_pricing_service.price.application.QuoteService;
 
 @RestController
 @RequestMapping("/api/v1/quotes")

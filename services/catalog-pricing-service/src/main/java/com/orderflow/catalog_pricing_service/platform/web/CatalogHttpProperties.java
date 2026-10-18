@@ -1,4 +1,4 @@
-package com.orderflow.catalog_pricing_service.config;
+package com.orderflow.catalog_pricing_service.platform.web;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.unit.DataSize;
