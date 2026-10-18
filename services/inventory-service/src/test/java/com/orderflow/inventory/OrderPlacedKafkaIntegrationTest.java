@@ -10,13 +10,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import com.orderflow.inventory.application.OrderPlacedProcessor;
+import com.orderflow.inventory.events.EventEnvelope;
+import com.orderflow.inventory.events.OrderPlacedPayload;
+import com.orderflow.inventory.reservation.application.OrderPlacedProcessor;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import com.orderflow.inventory.infrastructure.events.EventEnvelope;
-import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
 import org.junit.jupiter.api.Test;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;

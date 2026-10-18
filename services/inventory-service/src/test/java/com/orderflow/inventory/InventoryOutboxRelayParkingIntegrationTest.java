@@ -11,7 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
+import com.orderflow.inventory.outbox.InventoryOutboxRelay;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.propagation.Propagator;

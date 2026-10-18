@@ -1,7 +1,7 @@
 package com.orderflow.inventory;
 
-import com.orderflow.inventory.lowstock.application.LowStockScanService;
-import com.orderflow.inventory.lowstock.infrastructure.LowStockJob;
+import com.orderflow.inventory.lowstock.LowStockJob;
+import com.orderflow.inventory.lowstock.LowStockScanService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

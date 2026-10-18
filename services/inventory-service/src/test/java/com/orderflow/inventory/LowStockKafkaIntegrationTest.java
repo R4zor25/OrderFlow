@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxRelay;
-import com.orderflow.inventory.lowstock.application.LowStockScanService;
+import com.orderflow.inventory.lowstock.LowStockScanService;
+import com.orderflow.inventory.outbox.InventoryOutboxRelay;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;

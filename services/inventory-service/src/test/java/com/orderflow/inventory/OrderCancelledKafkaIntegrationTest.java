@@ -7,8 +7,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import com.orderflow.inventory.infrastructure.events.EventEnvelope;
-import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
+import com.orderflow.inventory.events.EventEnvelope;
+import com.orderflow.inventory.events.OrderPlacedPayload;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;

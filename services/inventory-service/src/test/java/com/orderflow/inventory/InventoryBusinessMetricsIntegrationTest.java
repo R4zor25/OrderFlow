@@ -4,10 +4,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.inventory.application.OrderPlacedProcessor;
-import com.orderflow.inventory.application.ReservationOutcomeService;
-import com.orderflow.inventory.infrastructure.events.EventEnvelope;
-import com.orderflow.inventory.infrastructure.events.OrderPlacedPayload;
+import com.orderflow.inventory.events.EventEnvelope;
+import com.orderflow.inventory.events.OrderPlacedPayload;
+import com.orderflow.inventory.reservation.application.OrderPlacedProcessor;
+import com.orderflow.inventory.reservation.application.ReservationOutcomeService;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

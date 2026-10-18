@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxWriter;
+import com.orderflow.inventory.outbox.InventoryOutboxWriter;
 import com.orderflow.inventory.reservation.domain.ReservationLine;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

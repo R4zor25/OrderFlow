@@ -7,8 +7,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import com.orderflow.inventory.infrastructure.outbox.InventoryOutboxWriter;
-import com.orderflow.inventory.lowstock.application.LowStockScanService;
+import com.orderflow.inventory.lowstock.LowStockScanService;
+import com.orderflow.inventory.outbox.InventoryOutboxWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

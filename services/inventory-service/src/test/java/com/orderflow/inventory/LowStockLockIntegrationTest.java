@@ -6,8 +6,8 @@ import java.util.UUID;
 
 import javax.sql.DataSource;
 
-import com.orderflow.inventory.lowstock.application.LowStockScanService;
-import com.orderflow.inventory.lowstock.infrastructure.LowStockJob;
+import com.orderflow.inventory.lowstock.LowStockJob;
+import com.orderflow.inventory.lowstock.LowStockScanService;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;

@@ -1,8 +1,6 @@
 package com.orderflow.inventory.stock;
 
-import com.orderflow.inventory.api.ApiExceptionHandler;
-import com.orderflow.inventory.stock.api.StockController;
-import com.orderflow.inventory.stock.application.StockService;
+import com.orderflow.inventory.platform.web.ApiExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
