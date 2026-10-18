@@ -1,23 +1,23 @@
 package com.orderflow.order;
 
-import com.orderflow.order.application.OrderAccess;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.events.EventEnvelope;
+import com.orderflow.order.events.OrderConfirmedPayload;
+import com.orderflow.order.events.OrderRejectedPayload;
+import com.orderflow.order.orders.application.CancelOrderService;
+import com.orderflow.order.orders.application.OrderAccess;
+import com.orderflow.order.orders.application.StockResultService;
+import com.orderflow.order.orders.domain.InvalidOrderStateException;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.outbox.OrderOutboxWriter;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.application.CancelOrderService;
-import com.orderflow.order.application.StockResultService;
-import com.orderflow.order.domain.InvalidOrderStateException;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.events.EventEnvelope;
-import com.orderflow.order.infrastructure.events.OrderConfirmedPayload;
-import com.orderflow.order.infrastructure.events.OrderRejectedPayload;
-import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

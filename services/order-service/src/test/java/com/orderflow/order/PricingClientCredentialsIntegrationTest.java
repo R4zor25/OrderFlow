@@ -6,9 +6,9 @@ import java.util.List;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
-import com.orderflow.order.infrastructure.pricing.PricingGateway;
-import com.orderflow.order.infrastructure.pricing.QuoteLineRequest;
-import com.orderflow.order.infrastructure.pricing.QuoteRequest;
+import com.orderflow.order.pricing.PricingGateway;
+import com.orderflow.order.pricing.quote.QuoteLineRequest;
+import com.orderflow.order.pricing.quote.QuoteRequest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

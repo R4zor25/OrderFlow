@@ -1,6 +1,14 @@
 package com.orderflow.order;
 
-import com.orderflow.order.application.OrderAccess;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.events.EventEnvelope;
+import com.orderflow.order.events.StockReservationFailedPayload;
+import com.orderflow.order.events.StockReservedPayload;
+import com.orderflow.order.orders.application.CancelOrderService;
+import com.orderflow.order.orders.application.OrderAccess;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -13,14 +21,6 @@ import java.util.UUID;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Tracer;
-import com.orderflow.order.application.CancelOrderService;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.events.EventEnvelope;
-import com.orderflow.order.infrastructure.events.StockReservationFailedPayload;
-import com.orderflow.order.infrastructure.events.StockReservedPayload;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;

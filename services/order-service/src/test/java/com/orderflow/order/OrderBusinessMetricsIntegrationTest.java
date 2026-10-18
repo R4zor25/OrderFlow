@@ -1,22 +1,22 @@
 package com.orderflow.order;
 
-import com.orderflow.order.application.IdempotencyKey;
-import com.orderflow.order.application.OrderAccess;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.idempotency.IdempotencyKey;
+import com.orderflow.order.orders.application.CancelOrderService;
+import com.orderflow.order.orders.application.OrderAccess;
+import com.orderflow.order.orders.application.PersistPlacedOrderService;
+import com.orderflow.order.orders.application.StockResultService;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.pricing.PricingGateway;
+import com.orderflow.order.pricing.quote.QuoteLineResponse;
+import com.orderflow.order.pricing.quote.QuoteResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.application.CancelOrderService;
-import com.orderflow.order.application.PersistPlacedOrderService;
-import com.orderflow.order.application.StockResultService;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.pricing.PricingGateway;
-import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
-import com.orderflow.order.infrastructure.pricing.QuoteResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

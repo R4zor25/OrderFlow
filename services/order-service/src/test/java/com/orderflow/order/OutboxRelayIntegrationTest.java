@@ -7,10 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.orderflow.order.infrastructure.pricing.PricingGateway;
-import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
-import com.orderflow.order.infrastructure.pricing.QuoteRequest;
-import com.orderflow.order.infrastructure.pricing.QuoteResponse;
+import com.orderflow.order.pricing.PricingGateway;
+import com.orderflow.order.pricing.quote.QuoteLineResponse;
+import com.orderflow.order.pricing.quote.QuoteRequest;
+import com.orderflow.order.pricing.quote.QuoteResponse;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;

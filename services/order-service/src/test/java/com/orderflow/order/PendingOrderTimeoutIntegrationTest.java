@@ -6,12 +6,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.application.PendingOrderTimeoutService;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.PendingOrderTimeoutJob;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.orders.application.PendingOrderTimeoutService;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.orders.infrastructure.PendingOrderTimeoutJob;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

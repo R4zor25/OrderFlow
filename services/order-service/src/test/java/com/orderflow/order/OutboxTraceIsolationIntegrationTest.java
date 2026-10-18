@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.orderflow.order.infrastructure.outbox.OutboxRelay;
+import com.orderflow.order.outbox.OutboxRelay;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;

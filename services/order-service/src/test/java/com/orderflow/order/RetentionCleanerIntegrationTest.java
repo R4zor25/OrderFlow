@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.infrastructure.retention.RetentionCleaner;
-import com.orderflow.order.infrastructure.retention.RetentionJob;
+import com.orderflow.order.retention.RetentionCleaner;
+import com.orderflow.order.retention.RetentionJob;
 import net.javacrumbs.shedlock.core.LockAssert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

@@ -9,12 +9,12 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import com.orderflow.order.domain.Customer;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
+import com.orderflow.order.customer.Customer;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.outbox.OrderOutboxWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

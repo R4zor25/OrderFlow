@@ -1,24 +1,24 @@
 package com.orderflow.order;
 
-import com.orderflow.order.application.OrderAccess;
+import com.orderflow.order.customer.Customer;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.events.EventEnvelope;
+import com.orderflow.order.events.OrderCancelledPayload;
+import com.orderflow.order.orders.application.CancelOrderService;
+import com.orderflow.order.orders.application.OrderAccess;
+import com.orderflow.order.orders.application.OrderQueryService;
+import com.orderflow.order.orders.domain.InvalidOrderStateException;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderNotFoundException;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.outbox.OrderOutboxWriter;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.application.CancelOrderService;
-import com.orderflow.order.application.OrderQueryService;
-import com.orderflow.order.domain.Customer;
-import com.orderflow.order.domain.InvalidOrderStateException;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderNotFoundException;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
-import com.orderflow.order.infrastructure.events.EventEnvelope;
-import com.orderflow.order.infrastructure.events.OrderCancelledPayload;
-import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

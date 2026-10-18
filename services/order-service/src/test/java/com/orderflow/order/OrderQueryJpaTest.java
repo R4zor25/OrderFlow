@@ -1,7 +1,15 @@
 package com.orderflow.order;
 
-import com.orderflow.order.application.OrderAccess;
-import com.orderflow.order.application.OrderDetails;
+import com.orderflow.order.customer.Customer;
+import com.orderflow.order.customer.CustomerRepository;
+import com.orderflow.order.orders.application.OrderAccess;
+import com.orderflow.order.orders.application.OrderDetails;
+import com.orderflow.order.orders.application.OrderQueryService;
+import com.orderflow.order.orders.domain.InvalidOrderException;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.domain.OrderNotFoundException;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
@@ -9,14 +17,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-import com.orderflow.order.application.OrderQueryService;
-import com.orderflow.order.domain.Customer;
-import com.orderflow.order.domain.InvalidOrderException;
-import com.orderflow.order.domain.Order;
-import com.orderflow.order.domain.OrderNotFoundException;
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.infrastructure.CustomerRepository;
-import com.orderflow.order.infrastructure.OrderRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;

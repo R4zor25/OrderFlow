@@ -5,9 +5,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.orderflow.order.infrastructure.pricing.PricingGateway;
-import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
-import com.orderflow.order.infrastructure.pricing.QuoteResponse;
+import com.orderflow.order.pricing.PricingGateway;
+import com.orderflow.order.pricing.quote.QuoteLineResponse;
+import com.orderflow.order.pricing.quote.QuoteResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.orderflow.order.infrastructure.outbox.OutboxRelay;
+import com.orderflow.order.outbox.OutboxRelay;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.InterruptException;

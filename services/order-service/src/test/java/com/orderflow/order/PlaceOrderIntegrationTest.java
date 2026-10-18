@@ -8,20 +8,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import com.orderflow.order.domain.OrderStatus;
-import com.orderflow.order.application.IdempotentPlaceOrderService;
-import com.orderflow.order.application.PlaceOrderCommand;
-import com.orderflow.order.application.PlaceOrderResult;
-import com.orderflow.order.domain.IdempotencyException;
-import com.orderflow.order.infrastructure.pricing.PricingGateway;
-import com.orderflow.order.infrastructure.pricing.PricingUnavailableException;
-import com.orderflow.order.infrastructure.pricing.QuoteLineResponse;
-import com.orderflow.order.infrastructure.pricing.QuoteRequest;
-import com.orderflow.order.infrastructure.pricing.QuoteResponse;
-import com.orderflow.order.infrastructure.outbox.OrderOutboxWriter;
-import com.orderflow.order.infrastructure.events.EventEnvelope;
-import com.orderflow.order.infrastructure.events.OrderPlacedPayload;
-import com.orderflow.order.infrastructure.idempotency.RedisIdempotencyStore;
+import com.orderflow.order.events.EventEnvelope;
+import com.orderflow.order.events.OrderPlacedPayload;
+import com.orderflow.order.idempotency.IdempotencyException;
+import com.orderflow.order.idempotency.RedisIdempotencyStore;
+import com.orderflow.order.orders.application.IdempotentPlaceOrderService;
+import com.orderflow.order.orders.application.PlaceOrderCommand;
+import com.orderflow.order.orders.application.PlaceOrderResult;
+import com.orderflow.order.orders.domain.OrderStatus;
+import com.orderflow.order.outbox.OrderOutboxWriter;
+import com.orderflow.order.pricing.PricingGateway;
+import com.orderflow.order.pricing.PricingUnavailableException;
+import com.orderflow.order.pricing.quote.QuoteLineResponse;
+import com.orderflow.order.pricing.quote.QuoteRequest;
+import com.orderflow.order.pricing.quote.QuoteResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -297,7 +297,7 @@ class PlaceOrderIntegrationTest {
 
         assertThat(redis.opsForValue().get(replacement.redisKey())).isEqualTo(replacement.pendingJson());
         assertThatThrownBy(() -> idempotencyStore.claim(customerId, clientKey, "hash"))
-            .isInstanceOf(com.orderflow.order.domain.IdempotencyException.class)
+            .isInstanceOf(com.orderflow.order.idempotency.IdempotencyException.class)
             .hasMessageContaining("still in progress");
         idempotencyStore.release(replacement);
     }

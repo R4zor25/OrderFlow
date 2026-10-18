@@ -1,0 +1,45 @@
+package com.orderflow.order.orders.application;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+
+import com.orderflow.order.customer.Customer;
+import com.orderflow.order.idempotency.IdempotencyKey;
+import com.orderflow.order.orders.domain.Order;
+import com.orderflow.order.orders.infrastructure.OrderBusinessMetrics;
+import com.orderflow.order.orders.infrastructure.OrderRepository;
+import com.orderflow.order.outbox.OrderOutboxWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class PersistPlacedOrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(PersistPlacedOrderService.class);
+
+    private final OrderRepository orders;
+    private final OrderOutboxWriter outbox;
+    private final OrderBusinessMetrics metrics;
+
+    public PersistPlacedOrderService(OrderRepository orders, OrderOutboxWriter outbox,
+                                     OrderBusinessMetrics metrics) {
+        this.orders = orders;
+        this.outbox = outbox;
+        this.metrics = metrics;
+    }
+
+    @Transactional
+    public PlaceOrderResult persist(Customer customer, List<Order.PricedLine> pricedLines,
+                                    BigDecimal totalVat, Instant now, IdempotencyKey idempotency) {
+        Order order = Order.place(customer, pricedLines, totalVat, now);
+        order.recordIdempotencyKey(idempotency.key(), idempotency.requestHash());
+        order = orders.saveAndFlush(order);
+        outbox.placed(order, now);
+        metrics.placedAfterCommit(customer.getType());
+        log.info("Order placed orderId={}", order.getId());
+        return PlaceOrderResult.from(order);
+    }
+}
