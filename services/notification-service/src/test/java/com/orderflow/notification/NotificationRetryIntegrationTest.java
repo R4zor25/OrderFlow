@@ -1,10 +1,10 @@
 package com.orderflow.notification;
 
-import com.orderflow.notification.application.NotificationDraft;
-import com.orderflow.notification.application.NotificationStore;
-import com.orderflow.notification.config.NotificationDeliverySettings;
-import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
+import com.orderflow.notification.delivery.NotificationDeliverySettings;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
+import com.orderflow.notification.notifications.NotificationDraft;
+import com.orderflow.notification.notifications.NotificationRepository;
+import com.orderflow.notification.notifications.NotificationStore;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;

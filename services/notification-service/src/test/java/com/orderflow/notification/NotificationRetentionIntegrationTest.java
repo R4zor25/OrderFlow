@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-import com.orderflow.notification.application.NotificationRetention;
+import com.orderflow.notification.retention.NotificationRetention;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
 import jakarta.inject.Inject;

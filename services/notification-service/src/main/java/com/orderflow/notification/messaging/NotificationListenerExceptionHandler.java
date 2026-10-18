@@ -1,5 +1,6 @@
 package com.orderflow.notification.messaging;
 
+import com.orderflow.notification.messaging.deadletter.DeadLetters;
 import io.micronaut.configuration.kafka.exceptions.DefaultKafkaListenerExceptionHandler;
 import io.micronaut.configuration.kafka.exceptions.KafkaListenerException;
 import io.micronaut.configuration.kafka.exceptions.KafkaListenerExceptionHandler;

@@ -1,8 +1,8 @@
 package com.orderflow.notification;
 
 import com.orderflow.notification.messaging.InvalidNotificationEventException;
-import io.micronaut.configuration.kafka.ConsumerRegistry;
 import com.orderflow.notification.messaging.NotificationEventDecoder;
+import io.micronaut.configuration.kafka.ConsumerRegistry;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
 import org.apache.kafka.clients.admin.AdminClient;

@@ -1,6 +1,6 @@
 package com.orderflow.notification;
 
-import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
+import com.orderflow.notification.notifications.NotificationRepository;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.runtime.server.EmbeddedServer;
 import org.junit.jupiter.api.AfterAll;

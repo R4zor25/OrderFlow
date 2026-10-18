@@ -1,6 +1,7 @@
 package com.orderflow.notification.messaging;
 
-import com.orderflow.notification.application.NotificationProcessor;
+import com.orderflow.notification.delivery.NotificationProcessor;
+import com.orderflow.notification.messaging.deadletter.DeadLetters;
 import io.micronaut.configuration.kafka.annotation.ErrorStrategy;
 import io.micronaut.configuration.kafka.annotation.ErrorStrategyValue;
 import io.micronaut.configuration.kafka.annotation.KafkaListener;

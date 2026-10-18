@@ -1,6 +1,6 @@
 package com.orderflow.notification;
 
-import com.orderflow.notification.infrastructure.delivery.NotificationRetryJob;
+import com.orderflow.notification.delivery.NotificationRetryJob;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;

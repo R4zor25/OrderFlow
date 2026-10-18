@@ -1,5 +1,7 @@
 package com.orderflow.notification.messaging;
 
+import com.orderflow.notification.messaging.deadletter.DeadLetters;
+import com.orderflow.notification.messaging.deadletter.NotificationDeadLetterPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.json.JsonMapper;
 import io.opentelemetry.api.OpenTelemetry;

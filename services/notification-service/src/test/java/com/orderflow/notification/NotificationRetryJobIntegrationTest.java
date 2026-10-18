@@ -1,12 +1,12 @@
 package com.orderflow.notification;
 
-import com.orderflow.notification.application.NotificationBacklogMetrics;
-import com.orderflow.notification.application.NotificationDelivery;
-import com.orderflow.notification.application.NotificationDraft;
-import com.orderflow.notification.application.NotificationStore;
-import com.orderflow.notification.config.NotificationDeliverySettings;
-import com.orderflow.notification.config.NotificationSettings.Channel;
-import com.orderflow.notification.infrastructure.persistence.NotificationRepository;
+import com.orderflow.notification.delivery.NotificationDelivery;
+import com.orderflow.notification.delivery.NotificationDeliverySettings;
+import com.orderflow.notification.notifications.NotificationBacklogMetrics;
+import com.orderflow.notification.notifications.NotificationDraft;
+import com.orderflow.notification.notifications.NotificationRepository;
+import com.orderflow.notification.notifications.NotificationSettings.Channel;
+import com.orderflow.notification.notifications.NotificationStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import io.micronaut.test.support.TestPropertyProvider;
@@ -208,7 +208,7 @@ class NotificationRetryJobIntegrationTest implements TestPropertyProvider {
 
     @Test
     void retryJobIsDisabledInTests() {
-        assertThat(context.containsBean(com.orderflow.notification.infrastructure.delivery.NotificationRetryJob.class))
+        assertThat(context.containsBean(com.orderflow.notification.delivery.NotificationRetryJob.class))
                 .isFalse();
     }
 
