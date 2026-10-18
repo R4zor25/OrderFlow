@@ -342,7 +342,7 @@ Why choreography and not an orchestrator: two participants, three outcomes and o
 
 API conventions:
 
-- DTOs are Java records in an `api` package; entities never leave the service layer.
+- DTOs are Java records in the feature's `api` package (or in the feature package itself when it is flat); entities never leave the service layer.
 - Business, validation and framework request errors map to `ProblemDetail` (`application/problem+json`) in one `@RestControllerAdvice` per service, with a stable relative `type` URI per error (`/problems/insufficient-stock` etc.); other unexpected exceptions still reach Spring Boot's default error response, as there is no catch-all. Malformed requests are 400 `/problems/bad-request` in order-service (bad JSON, missing header or parameter, wrong type, plus `/problems/not-found` and `/problems/http-error` for other framework statuses); catalog-pricing-service answers bad JSON and wrong types with 400 `/problems/validation`. Bean Validation failures carry a `violations` map (field → message): order-service answers them with 422 `/problems/invalid-order` (a business-level rejection of the order), catalog-pricing-service with 400 `/problems/validation`. An unreachable database is 503 `/problems/database-unavailable` with `Retry-After` in all three Spring services.
 - Pagination via `Pageable`, max page size 100; `page × size` (catalog: after capping the size) must fit the JPA `int` offset (at most 2 147 483 647), otherwise the request is rejected (catalog 400, order 422). The order list runs one query per filter combination, each backed by an index that covers the `created_at desc, id desc` sort, so a generic plan needs no Sort step; the page total still costs a count over the filtered rows.
 - Request limits: order lines, quote lines and price tiers are capped at 100 per request. Request bodies above 64 KiB (`order.http.max-request-body-size`, `catalog.http.max-request-body-size`) are rejected with 413 `/problems/payload-too-large` before parsing when the length is known, and cut off (400) when it is not. Each line's quantity is at most 10 000 and a SKU may appear only once per order or quote; order totals must fit the stored `numeric(12,2)` range (otherwise 422 `/problems/invalid-order`).
@@ -466,17 +466,27 @@ orderflow/
     └── deploy.yml
 ```
 
-Package layout inside a Spring service (package by feature, thin layers inside):
+Package layout inside a service, by feature:
+
+- Top-level packages are features; a feature keeps its own `*Configuration` and `*Properties` records.
+- A feature of up to eight files stays flat. A larger one has `api`, `application`, `domain` and `infrastructure` (and, if needed, `config`) subpackages; a clearly separate part of a flat feature may get its own subpackage, such as `pricing/quote`.
+- Code that belongs to no single feature lives under `platform`: `platform/web` for security, the exception handler, HTTP limits and OpenAPI; `platform/health` for health indicators; the `platform` root for the clock and the scheduler lock.
+- Event contract records (the envelope and payloads) live in `events`, because the outbox writer and the listener share them.
+- A feature name does not repeat the service's root package, so the order feature is `orders`, not `order.order`.
 
 ```
 com.orderflow.order
-├── api            # controllers, request/response records, exception handler
-├── application    # use-case services, transactions live here
-├── domain         # entities, enums, domain rules (state machine, pricing rule)
-├── infrastructure # JPA repositories, Kafka producer/consumer, outbox relay, HTTP clients, Redis
-└── config
+├── orders/          # the order feature: api, application, domain, infrastructure
+├── customer/        # flat
+├── pricing/         # gateway, client and errors; quote/ records; config/ client and resilience setup
+├── idempotency/     # Redis claim store and the idempotency key
+├── outbox/          # writer, relay, metrics and the relay schedule
+├── events/          # envelope and payload records
+├── messaging/       # stock result listener, consumer error handling, topics
+├── retention/       # cleanup job
+└── platform/        # clock and scheduler lock; web/ and health/
 ```
 
 No ports-and-adapters interfaces unless there are two real implementations.
 
-In `catalog-pricing-service`, `product` and `price` are feature packages with their own `api`, `application`, `domain`, and `infrastructure` subpackages. The cross-feature `ApiExceptionHandler` and UTC `Clock` configuration live in top-level `api` and `config` packages.
+The other services follow the same rule: `catalog-pricing-service` has `product` and `price`, `inventory-service` has `stock`, `reservation` (which also handles the order events that reserve and release stock) and `lowstock`, and `notification-service` has `notifications`, `delivery`, `messaging` and `retention`.
