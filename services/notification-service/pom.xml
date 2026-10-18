@@ -219,6 +219,12 @@
                                 <id>coverage-report</id>
                                 <phase>verify</phase>
                                 <goals><goal>report</goal></goals>
+                                <configuration>
+                                    <!-- Micronaut Serde generates these at compile time; they are not code we write or test. -->
+                                    <excludes>
+                                        <exclude>**/Serde*.class</exclude>
+                                    </excludes>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>
