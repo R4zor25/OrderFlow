@@ -1,5 +1,6 @@
 package com.orderflow.inventory;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.kafka.core.KafkaAdmin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(properties = {"inventory.messaging.enabled=true", "spring.kafka.listener.auto-startup=false"})
 @Import({PostgresTestConfiguration.class, KafkaTestConfiguration.class})
@@ -44,11 +46,14 @@ class TopicRetentionIntegrationTest {
         try (var admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
             admin.incrementalAlterConfigs(Map.of(RESOURCE, List.of(new AlterConfigOp(
                 new ConfigEntry(TopicConfig.RETENTION_MS_CONFIG, "3600000"), AlterConfigOp.OpType.SET)))).all().get();
-            assertThat(retention(admin).value()).isEqualTo("3600000");
+            // The broker applies a committed config change from the metadata log, so a read can briefly see the old value.
+            await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(retention(admin).value()).isEqualTo("3600000"));
 
             kafkaAdmin.initialize();
 
-            assertThat(retention(admin).value()).isEqualTo("604800000");
+            await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(retention(admin).value()).isEqualTo("604800000"));
         }
     }
 
